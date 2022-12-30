@@ -1,0 +1,5 @@
+loguru
+matplotlib
+pytorch-lightning==1.6.3
+seaborn
+wandb
