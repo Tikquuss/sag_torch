@@ -1,7 +1,7 @@
 import os
 from typing import List, Union, Dict
 import torch
-from torch.utils.data import DataLoader, TensorDataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset
 import torchvision
 import pytorch_lightning as pl
 from loguru import logger
@@ -9,10 +9,22 @@ from loguru import logger
 DATA_PATH="../data"
 #os.makedirs(DATA_PATH, exist_ok=True)
 
-def get_dataloader(x, y, train_pct, batch_size, num_workers=4):
+class DatasetWithIndexes(Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+        
+    def __getitem__(self, index):
+        data, target = self.dataset[index]
+        return data, target, index
+
+    def __len__(self):
+        return len(self.dataset)
+
+def get_dataloader(x, y, train_pct, batch_size, num_workers=0):
     """We define a data constructor that we can use for various purposes later."""
   
     dataset = TensorDataset(x, y)
+    dataset = DatasetWithIndexes(dataset)
     n = len(dataset)
     train_size = train_pct * n // 100
     val_size = n - train_size
@@ -62,6 +74,9 @@ class LMLightningDataModule(pl.LightningDataModule):
         elif self.dataset_name == "cifar10" :
             self.train_dataset = torchvision.datasets.CIFAR10(DATA_PATH, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(DATA_PATH, train=False, download=True, transform = transform)
+
+        self.train_dataset = DatasetWithIndexes(self.train_dataset)
+        self.val_dataset = DatasetWithIndexes(self.val_dataset)
 
         train_size = len(self.train_dataset)
         val_size = len(self.val_dataset)

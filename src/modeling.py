@@ -37,16 +37,18 @@ class Net(nn.Module):
 class Model(pl.LightningModule):
     """
     params : 
-        - p (int), emb_dim (int), hidden_dim (int),  n_layers (int), regression (bool), modular (bool)
-        - pad_index (int, optional, None), use_wandb (int, optional, False)
-        - representation_lr and decoder_lr (float, optional, 1e-3), weight_decay (float, optional, 0) 
-        - factor (float, optional, 0.2), patience (float, optional, 20), min_lr (float, optional, 5e-5)
+        - hidden_dim (int), regression (bool)
+        - use_wandb (int, optional, False)
+        - lr (float, optional, 1e-3), weight_decay (float, optional, 0) 
+        - patience (float, optional, 20), min_lr (float, optional, 5e-5)
     """
     def __init__(self, params):
         """
         Transformer model 
         """
         super().__init__()
+        # Important: This property activates manual optimization.
+        self.automatic_optimization = False
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters(params) 
 
@@ -82,6 +84,11 @@ class Model(pl.LightningModule):
         parameters = [
             {'params': self.backbone.parameters(), 'lr': self.hparams.get("lr", 1e-3)}, 
         ]
+        if 'sag' in self.hparams.optimizer:
+            batch_mode = True
+            n = self.hparams.data_infos["train_n_batchs"] if batch_mode else self.hparams.data_infos["train_size"]
+            self.hparams.optimizer += f",n={n},batch_mode={batch_mode}"
+    
         return configure_optimizers(parameters, self.hparams.optimizer, self.hparams.lr_scheduler)
 
     def forward(self, x):
@@ -94,13 +101,25 @@ class Model(pl.LightningModule):
         """
         Given a batch of data, this function returns the  loss (MSE or CEL)
         """
-        x, y = batch # We do not need the labels
+        x, y, indexes = batch # We do not need the labels
         tensor = self.forward(x)
         loss = self.criterion(input = tensor, target=y)
-        return loss, tensor, y
+        return loss, tensor, y, indexes
     
     def training_step(self, batch, batch_idx):
-        loss, tensor, y = self._get_loss(batch)  
+        loss, tensor, y, indexes = self._get_loss(batch)
+
+        if not self.automatic_optimization :
+            opt = self.optimizers()
+            opt.zero_grad()
+            self.manual_backward(loss)
+            #opt.step(batch_idx, indexes)
+            try :
+                opt.step(batch_idx, indexes)
+            except TypeError :
+                # step() takes from 1 to 2 positional arguments but 3 were given
+                opt.step()
+
         self.log('train_loss', loss, prog_bar=True)
         output = {"loss" : loss}
         if not self.hparams.regression : 
@@ -110,7 +129,7 @@ class Model(pl.LightningModule):
         return output 
     
     def validation_step(self, batch, batch_idx):
-        loss, tensor, y = self._get_loss(batch)
+        loss, tensor, y, _ = self._get_loss(batch)
         self.log('val_loss', loss, prog_bar=True)
         output = {'val_loss' : loss}
         if not self.hparams.regression : 
@@ -120,7 +139,7 @@ class Model(pl.LightningModule):
         return  output 
     
     def test_step(self, batch, batch_idx):
-        loss, tensor, y = self._get_loss(batch)
+        loss, tensor, y, _ = self._get_loss(batch)
         #self.log('test_loss', loss, prog_bar=True)
         output = {'test_loss' : loss}
         if not self.hparams.regression : 
