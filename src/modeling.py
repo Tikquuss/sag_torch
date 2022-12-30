@@ -121,12 +121,12 @@ class Model(pl.LightningModule):
     
     def test_step(self, batch, batch_idx):
         loss, tensor, y = self._get_loss(batch)
-        self.log('test_loss', loss, prog_bar=True)
+        #self.log('test_loss', loss, prog_bar=True)
         output = {'test_loss' : loss}
         if not self.hparams.regression : 
             acc = (tensor.argmax(dim=-1) == y).float().mean() * 100
             output["test_acc"] = acc
-            self.log('test_acc', acc, prog_bar=True)
+            #self.log('test_acc', acc, prog_bar=True)
         return output 
 
     def increase_es_limit(self, logs):

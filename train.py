@@ -104,7 +104,7 @@ def main(params) :
         dataset_name = params.dataset_name,
         train_batch_size = params.train_batch_size,
         val_batch_size = params.val_batch_size,
-        num_workers = params.num_workers,
+        #num_workers = params.num_workers,
     )
 
     setattr(params, "data_infos", data_module.data_infos)

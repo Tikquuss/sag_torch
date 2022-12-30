@@ -399,7 +399,9 @@ def get_optimizer(parameters, s, noamopt=""):
     method, optim_params = get_params_from_string(s, separator = ",", have_method=True)
     #print(method, optim_params)
 
-    if method == 'adadelta':
+    if method == 'sagbase':
+        optim_fn = SAGBase
+    elif method == 'adadelta':
         optim_fn = optim.Adadelta
     elif method == 'adagrad':
         optim_fn = optim.Adagrad
