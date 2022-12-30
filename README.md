@@ -12,4 +12,4 @@ chmod +x train.sh
 #./train_loop.sh 
 ```
 
-See the notebook [Train+Analyse&Visualize_Embedding&decoder_layers_weights.ipynb](Train+Analyse&Visualize_Embedding&decoder_layers_weights.ipynb) for embedding and weights visualization
+See the notebook [Train.ipynb](Train.ipynb) 
