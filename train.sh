@@ -37,7 +37,7 @@ wandb_entity="grokking_ppsp"
 wandb_project="dataset=${dataset_name}-task=${task}"
 
 #exp_id=$task
-exp_id="${task}_${group_name}"
+exp_id="${task}_${dataset_name}"
 
 ### Early_stopping (for grokking) : Stop the training `patience` epochs after the `metric` has reached the value `metric_threshold` ###
 #early_stopping_grokking=$none
@@ -62,7 +62,7 @@ python train.py \
 	--lr $lr \
 	--lr_scheduler $lr_scheduler \
 	--max_epochs $max_epochs \
-	--validation_metrics val_loss \
+	--validation_metrics val_acc \
 	--checkpoint_path $none \
 	--every_n_epochs 100 \
 	--save_top_k -1 \

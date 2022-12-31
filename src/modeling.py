@@ -16,11 +16,10 @@ from .hash import get_hash_path
 possible_metrics = ["%s_%s"%(i, j) for i, j in itertools.product(["train", "val"], ["acc", "loss"])]
 
 class Net(nn.Module):
-    def __init__(self, dropout=0.5):
+    def __init__(self, n_class, dropout=0.5):
         super(Net, self).__init__()
         kernel_size=5
         hidden_dim=50
-        n_class=10
         self.conv1 = nn.Conv2d(in_channels=1, out_channels=10, kernel_size=kernel_size)
         self.conv2 = nn.Conv2d(in_channels=10, out_channels=20, kernel_size=kernel_size)
         self.conv2_drop = nn.Dropout2d(p=dropout)
@@ -54,7 +53,7 @@ class Model(pl.LightningModule):
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters(params) 
 
-        self.backbone = Net()
+        self.backbone = Net(n_class = 10, dropout=self.hparams.dropout)
 
         if self.hparams.regression : self.criterion = nn.MSELoss()
         else :
@@ -104,52 +103,62 @@ class Model(pl.LightningModule):
         if os.path.isfile(opt_path) :
             optimizer2 = configure_optimizers(parameters, self.hparams.optimizer, self.hparams.lr_scheduler)["optimizer"]
             optimizer2.load_state_dict(torch.load(opt_path))
-            for group, group2 in zip(optimizer.param_groups, optimizer2):
+            for group, group2 in zip(optimizer.param_groups, optimizer2.param_groups):
                     for p, p2 in zip(group['params'], group2['params']):
                         if p.grad is None: continue
                         optimizer.state[p]['y_i'] = optimizer2.state[p2]['y_i']
             return optimizer
         #
-        if True :
-            device = self.device
-            batch_mode = optimizer.batch_mode
-            batch_size=self.hparams.train_batch_size if batch_mode else 1
-            train_loader = torch.utils.data.DataLoader(self.hparams.train_dataset, batch_size=batch_size, shuffle=False)
-            #  delta_f (y_i) & delta_g
-            for group in optimizer.param_groups:
-                for p in group['params']:
-                    state = optimizer.state[p]
-                    state['delta_g'] = torch.zeros_like(p.data, device = p.data.device)
-            #
-            k = 0
-            for batch_idx, (data, target, indexes) in enumerate(train_loader):
-                loss, _, _, _ = self._get_loss(batch=(data.to(device), target.to(device), indexes))
-                self.zero_grad()
-                loss.backward()
-                k+=1
-                for group in optimizer.param_groups:
-                    for p in group['params']:
-                        if p.grad is None: continue
-                        grad = p.grad.data
-                        state = optimizer.state[p]
-                        state['y_i'][batch_idx if batch_mode else indexes] = grad + 0.0
-                        state['delta_g'].add_(state['delta_g'], alpha = (k-1.0)/k).add_(grad, alpha = 1.0/k)
-            #
-            for batch_idx, (data, target, indexes) in enumerate(train_loader):
-                for group in optimizer.param_groups:
-                    for p in group['params']:
-                        if p.grad is None: continue
-                        state = optimizer.state[p]
-                        state['y_i'][batch_idx if batch_mode else indexes].sub_(state['delta_g']) 
-            #
+        device = self.device
+        batch_mode = optimizer.batch_mode
+        batch_size = self.hparams.train_batch_size if batch_mode else 1
+        train_loader = torch.utils.data.DataLoader(self.hparams.train_dataset, batch_size=batch_size, shuffle=False)
+        #  delta_f (y_i) & delta_g
+        """
+        Since $\nabla g = \frac{1}{n} \sum_{i=1}^n \nabla f_i$ with potentially high $n$, 
+        it would be impractical to calculate all $ \nabla f_i$'s before averaging. We proceed iteratively as follows.
+        If we want to calculate $x = \frac{1}{n} \sum_{i=1}^n x_i$ for a given sequence $\{x_1, \dots, x_n\}$, we can 
+        set $a_k = \frac{1}{k} \sum_{i=1}^n x_i$ and notice that $a_k = \frac{k-1}{k} a_{k-1} + \frac{1}{k} x_k$. 
+        This allows us to compute $a_k$ iteratively up to rank $n$ and to set $x = a_n$.
+        More precisely, 
+            - $x = 0$, 
+            - and for $k$ in $\{1, ...., n\}$ : 
+                - $x = \frac{k-1}{k} x + \frac{1}{k} x_k$.
+        """
+        for group in optimizer.param_groups:
+            for p in group['params']:
+                state = optimizer.state[p]
+                state['delta_g'] = torch.zeros_like(p.data, device = p.data.device)
+        #
+        k = 0
+        for batch_idx, (data, target, indexes) in enumerate(train_loader):
+            loss, _, _, _ = self._get_loss(batch=(data.to(device), target.to(device), indexes))
+            self.zero_grad()
+            loss.backward()
+            k+=1
             for group in optimizer.param_groups:
                 for p in group['params']:
                     if p.grad is None: continue
-                    #optimizer.state[p].pop('delta_g', None)
-                    del optimizer.state[p]['delta_g']
-            #
-            torch.save(optimizer.state_dict(), opt_path)
+                    grad = p.grad.data
+                    state = optimizer.state[p]
+                    state['y_i'][batch_idx if batch_mode else indexes] = grad + 0.0
+                    state['delta_g'].add_(state['delta_g'], alpha = (k-1.0)/k).add_(grad, alpha = 1.0/k)
         #
+        for batch_idx, (data, target, indexes) in enumerate(train_loader):
+            for group in optimizer.param_groups:
+                for p in group['params']:
+                    if p.grad is None: continue
+                    state = optimizer.state[p]
+                    state['y_i'][batch_idx if batch_mode else indexes].sub_(state['delta_g']) 
+        #
+        for group in optimizer.param_groups:
+            for p in group['params']:
+                if p.grad is None: continue
+                #optimizer.state[p].pop('delta_g', None)
+                del optimizer.state[p]['delta_g']
+        #
+        torch.save(optimizer.state_dict(), opt_path)
+        
         return optimizer
 
     def forward(self, x):

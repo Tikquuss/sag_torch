@@ -58,76 +58,9 @@ class SAGBase(torch.optim.Optimizer):
 
         return loss
 
-class SAG(torch.optim.Optimizer):
+class AdamSAG(optim.Optimizer):
     """
-    Stochastic Average Gradient (SAG) : vanilla implementation
-    """
-    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0):
-        if not 0.0 <= lr:
-            raise ValueError("Invalid learning rate: {}".format(lr))
-        defaults = dict(lr=lr, weight_decay=weight_decay)
-        super().__init__(params, defaults)
-        self.batch_mode = batch_mode
-        self.n = int(m) if batch_mode else int(n)
-        self.init_y_i = init_y_i
-        for group in self.param_groups:
-            for p in group['params']:
-                state = self.state[p]
-                state['step'] = 0  # torch.zeros(1)
-                # state['y_i'] = torch.zeros_like(p.data).repeat((self.n, 1)) # (n, len(p.data))
-                state['y_i'] = torch.zeros(self.n, *p.data.shape, device = p.data.device) # 
-                state['d'] = torch.zeros_like(p.data, device = p.data.device)
-
-    def __setstate__(self, state):
-        super().__setstate__(state)
-
-    def step(self, batch_idx, indexes, closure=None):
-        """
-        Step.
-        """
-        loss = None
-        if closure is not None:
-            loss = closure()
-
-        for group in self.param_groups:
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                grad = p.grad.data
-                if grad.is_sparse:
-                    # TODO
-                    pass
-
-                state = self.state[p]
-                state['step'] += 1
-
-                # for i in [batch_idx if self.batch_mode else indexes][0] :
-                #     y_i = state['y_i'][i]
-                #     state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
-                #     state['y_i'][i] = grad + 0.0
-                
-                if self.batch_mode :
-                    y_i = state['y_i'][batch_idx]
-                    state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
-                    state['y_i'][batch_idx] = grad + 0.0
-                else :
-                    y_i = state['y_i'][indexes].mean(dim=0)
-                    state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
-                    state['y_i'][indexes] = grad + 0.0
-
-                if group['weight_decay'] != 0:
-                    p.data.add_(-group['weight_decay'] * group['lr'], p.data)
-
-                p.data.add_(-group['lr'], state['d']) # / n
-
-        return loss
-
-class Adam(optim.Optimizer):
-    """
-    Adapter from https://github.com/facebookresearch/XLM/blob/main/xlm/optim.py
-    Same as https://github.com/pytorch/pytorch/blob/master/torch/optim/adam.py,
-    without amsgrad, with step in a tensor, and states initialization in __init__.
-    It was important to add `.item()` in `state['step'].item()`.
+    Adam + SAG
     """
 
     def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0):
@@ -197,6 +130,71 @@ class Adam(optim.Optimizer):
 
                 # TODO : https://github.com/pytorch/pytorch/issues/32861
                 p.data.addcdiv_(-step_size, exp_avg, denom)
+
+        return loss
+
+class SAG(torch.optim.Optimizer):
+    """
+    Stochastic Average Gradient (SAG) : vanilla implementation
+    """
+    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0):
+        if not 0.0 <= lr:
+            raise ValueError("Invalid learning rate: {}".format(lr))
+        defaults = dict(lr=lr, weight_decay=weight_decay)
+        super().__init__(params, defaults)
+        self.batch_mode = batch_mode
+        self.n = int(m) if batch_mode else int(n)
+        self.init_y_i = init_y_i
+        for group in self.param_groups:
+            for p in group['params']:
+                state = self.state[p]
+                state['step'] = 0  # torch.zeros(1)
+                # state['y_i'] = torch.zeros_like(p.data).repeat((self.n, 1)) # (n, len(p.data))
+                state['y_i'] = torch.zeros(self.n, *p.data.shape, device = p.data.device) # 
+                state['d'] = torch.zeros_like(p.data, device = p.data.device)
+
+    def __setstate__(self, state):
+        super().__setstate__(state)
+
+    def step(self, batch_idx, indexes, closure=None):
+        """
+        Step.
+        """
+        loss = None
+        if closure is not None:
+            loss = closure()
+
+        for group in self.param_groups:
+            for p in group['params']:
+                if p.grad is None:
+                    continue
+                grad = p.grad.data
+                if grad.is_sparse:
+                    # TODO
+                    pass
+
+                state = self.state[p]
+                state['step'] += 1
+
+                # for i in [batch_idx if self.batch_mode else indexes][0] :
+                #     y_i = state['y_i'][i]
+                #     state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
+                #     state['y_i'][i] = grad + 0.0
+                
+                if self.batch_mode :
+                    y_i = state['y_i'][batch_idx]
+                    state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
+                    state['y_i'][batch_idx] = grad + 0.0
+                else :
+                    y_i = state['y_i'][indexes].mean(dim=0)
+                    state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
+                    state['y_i'][indexes] = grad + 0.0
+
+                if group['weight_decay'] != 0:
+                    p.data.add_(-group['weight_decay'] * group['lr'], p.data)
+
+                #p.data.add_(-group['lr'], state['d'] / self.n)
+                p.data.add_(-group['lr'], state['d']) # / n
 
         return loss
 
