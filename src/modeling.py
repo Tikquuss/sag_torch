@@ -85,11 +85,56 @@ class Model(pl.LightningModule):
             {'params': self.backbone.parameters(), 'lr': self.hparams.get("lr", 1e-3)}, 
         ]
         if 'sag' in self.hparams.optimizer:
-            batch_mode = True
-            n = self.hparams.data_infos["train_n_batchs"] if batch_mode else self.hparams.data_infos["train_size"]
-            self.hparams.optimizer += f",n={n},batch_mode={batch_mode}"
-    
-        return configure_optimizers(parameters, self.hparams.optimizer, self.hparams.lr_scheduler)
+            n = self.hparams.data_infos['train_size']
+            m = self.hparams.data_infos['train_n_batchs'] 
+            self.hparams.optimizer += f",n={n},m={m}"
+
+        optim_scheduler = configure_optimizers(parameters, self.hparams.optimizer, self.hparams.lr_scheduler)
+        optim_scheduler["optimizer"]
+        if 'sag' in self.hparams.optimizer and optim_scheduler["optimizer"].init_y_i :
+            optim_scheduler["optimizer"] = self.init_y_i(optim_scheduler["optimizer"], self.hparams.train_dataset)
+        return optim_scheduler
+
+    def init_y_i(self, optimizer, train_dataset):
+
+        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=False)
+        device = self.device
+        batch_mode = optimizer.batch_mode
+
+        #  delta_f (y_i) & delta_g
+        for group in optimizer.param_groups:
+            for p in group['params']:
+                state = optimizer.state[p]
+                state['delta_g'] = torch.zeros_like(p.data, device = p.data.device)
+        #
+        k = 0
+        for batch_idx, (data, target, indexes) in enumerate(train_loader):
+            data = data.to(device)
+            target = target.to(device)
+            loss, _, _, _ = self._get_loss(batch=(data, target, indexes))
+            self.zero_grad()
+            loss.backward()
+            k+=1
+            for group in optimizer.param_groups:
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    grad = p.grad.data
+                    state = optimizer.state[p]
+                    state['y_i'][batch_idx if batch_mode else indexes] = grad + 0.0
+                    state['delta_g'].add_(state['delta_g'], alpha = (k-1)/k).add_(grad, alpha = 1/k)
+        #
+        for batch_idx, (data, target, indexes) in enumerate(train_loader):
+            for group in optimizer.param_groups:
+                for p in group['params']:
+                    if p.grad is None:
+                        continue
+                    state = optimizer.state[p]
+                    state['y_i'][batch_idx if batch_mode else indexes].sub_(state['delta_g']) 
+                    #state.pop('delta_g', None)
+                    del state['delta_g']
+        #
+        return optimizer
 
     def forward(self, x):
         """
@@ -113,11 +158,9 @@ class Model(pl.LightningModule):
             opt = self.optimizers()
             opt.zero_grad()
             self.manual_backward(loss)
-            #opt.step(batch_idx, indexes)
             try :
-                opt.step(batch_idx, indexes)
+                opt.step(batch_idx=batch_idx, indexes=indexes)
             except TypeError :
-                # step() takes from 1 to 2 positional arguments but 3 were given
                 opt.step()
 
         self.log('train_loss', loss, prog_bar=True)

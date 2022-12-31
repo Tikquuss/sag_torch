@@ -108,6 +108,7 @@ def main(params) :
     )
 
     setattr(params, "data_infos", data_module.data_infos)
+    setattr(params, "train_dataset", data_module.train_dataset)
 
     # Train
     model, result = train(params, data_module)

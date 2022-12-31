@@ -85,13 +85,13 @@ def train(params, data_module):
         #except : pass
 
     # Test best model on validation set
-    val_result = trainer.test(model, datamodule = data_module, verbose=False)
-    data_module.test_dataloader = data_module.train_dataloader
-    train_result = trainer.test(model, datamodule = data_module, verbose=False)
+    val_result = trainer.validate(model, datamodule = data_module, verbose=False)
+    data_module.val_dataloader = data_module.train_dataloader
+    train_result = trainer.validate(model, datamodule = data_module, verbose=False)
 
     result = {"train": train_result, "val": val_result}
     for k1, v1 in copy(result).items() :
-        #for k2 in v1[0] : result[k1][0][k2.replace("test", k1)] = round(result[k1][0].pop(k2), 4)
-        result[k1] = {k2.replace("test", k1): round(result[k1][0][k2], 4) for k2 in v1[0]}
+        #for k2 in v1[0] : result[k1][0][k2.replace("val", k1)] = round(result[k1][0].pop(k2), 4)
+        result[k1] = {k2.replace("val", k1): round(result[k1][0][k2], 4) for k2 in v1[0]}
     
     return model, result

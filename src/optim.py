@@ -11,7 +11,7 @@ class SAGBase(torch.optim.Optimizer):
     """
     Stochastic Average Gradient (SAG) : vanilla implementation
     """
-    def __init__(self, params, n, batch_mode, lr=1e-3, weight_decay=0):
+    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         defaults = dict(lr=lr, weight_decay=weight_decay)
@@ -57,20 +57,21 @@ class SAGBase(torch.optim.Optimizer):
 
 class SAG(torch.optim.Optimizer):
     """
+    Stochastic Average Gradient (SAG) : vanilla implementation
     """
-    def __init__(self, params, n, batch_mode, lr=1e-3, weight_decay=0):
+    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0):
         if not 0.0 <= lr:
             raise ValueError("Invalid learning rate: {}".format(lr))
         defaults = dict(lr=lr, weight_decay=weight_decay)
         super().__init__(params, defaults)
         self.batch_mode = batch_mode
-        n = int(n)
-
+        n = int(m) if batch_mode else int(n)
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
                 state['step'] = 0  # torch.zeros(1)
-                state['y_i'] = torch.zeros(n, *p.data.shape, device = p.data.device) # torch.zeros_like(p.data).repeat((n, 1)) # (n, len(p.data))
+                # state['y_i'] = torch.zeros_like(p.data).repeat((n, 1)) # (n, len(p.data))
+                state['y_i'] = torch.zeros(n, *p.data.shape, device = p.data.device) # 
                 state['d'] = torch.zeros_like(p.data, device = p.data.device)
 
     def __setstate__(self, state):
@@ -96,10 +97,11 @@ class SAG(torch.optim.Optimizer):
                 state = self.state[p]
                 state['step'] += 1
 
-                # for i in indexes :
+                # for i in [batch_idx if self.batch_mode else indexes][0] :
                 #     y_i = state['y_i'][i]
                 #     state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
                 #     state['y_i'][i] = grad + 0.0
+                
                 if self.batch_mode :
                     y_i = state['y_i'][batch_idx]
                     state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
@@ -446,7 +448,7 @@ def get_params_from_string(s : str, separator = ",", have_method=True):
         optim_params = {}
         
     return method, optim_params
-
+        
 def get_optimizer(parameters, s, noamopt=""):
     """
     Parse optimizer parameters.
@@ -459,10 +461,16 @@ def get_optimizer(parameters, s, noamopt=""):
     method, optim_params = get_params_from_string(s, separator = ",", have_method=True)
     #print(method, optim_params)
 
-    if method == 'sagbase':
-        optim_fn = SAGBase
-    elif method == 'sag':
-        optim_fn = SAG
+    if "sag" in method :
+        if method == 'sagbase':
+            optim_fn = SAGBase
+        elif method == 'sag':
+            assert 'batch_mode' in optim_params
+            assert 'init_y_i' in optim_params
+            from .utils import bool_flag
+            optim_params["batch_mode"] = bool_flag(optim_params["batch_mode"])
+            optim_params["init_y_i"] = bool_flag(optim_params["init_y_i"])
+            optim_fn = SAG
     elif method == 'adadelta':
         optim_fn = optim.Adadelta
     elif method == 'adagrad':

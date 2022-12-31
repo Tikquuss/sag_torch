@@ -6,6 +6,9 @@ none="_None_"
 ### usage ###
 # . train.sh $weight_decay $lr $dropout $opt $random_seed $dataset_name $task
 
+#filename=train.sh 
+#cat $filename | tr -d '\r' > $filename.new && rm $filename && mv $filename.new $filename 
+
 ### Main parameters ###
 weight_decay=${1-0.0}
 lr=${2-0.001}
@@ -41,6 +44,8 @@ exp_id="${task}_${group_name}"
 early_stopping_grokking="patience=int(1000),metric=str(val_acc),metric_threshold=float(90.0)"
 
 opt="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001"
+#opt="sgd,weight_decay=${weight_decay},lr=${lr}"
+#opt="sag,weight_decay=${weight_decay},lr=${lr},batch_mode=False,init_y_i=True"
 
 python train.py \
 	--task $task \
@@ -70,6 +75,3 @@ python train.py \
 	--early_stopping_grokking $early_stopping_grokking \
 #	--early_stopping_patience 1000000000 \
 #	--model_name epoch=88-val_loss=13.6392.ckpt \
-
-#filename=train.sh 
-#cat $filename | tr -d '\r' > $filename.new && rm $filename && mv $filename.new $filename 
