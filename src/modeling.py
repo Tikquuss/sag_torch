@@ -95,8 +95,7 @@ class Model(pl.LightningModule):
             optim_scheduler["optimizer"] = self.init_y_i(parameters, optim_scheduler["optimizer"])
         return optim_scheduler
 
-    def init_y_i(self, parameters, optimizer, train_dataset = None, optimizer2 = None):
-        assert train_dataset is None ^ optimizer2 is None
+    def init_y_i(self, parameters, optimizer):
         f = '%s_%s_%s_%s'%(
             self.hparams.optimizer, self.hparams.train_batch_size, self.hparams.val_batch_size, self.hparams.train_pct
         )
@@ -109,12 +108,13 @@ class Model(pl.LightningModule):
                     for p, p2 in zip(group['params'], group2['params']):
                         if p.grad is None: continue
                         optimizer.state[p]['y_i'] = optimizer2.state[p2]['y_i']
+            return optimizer
         #
-        if train_dataset is not None :
+        if True :
             device = self.device
             batch_mode = optimizer.batch_mode
             batch_size=self.hparams.train_batch_size if batch_mode else 1
-            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, device=device)
+            train_loader = torch.utils.data.DataLoader(self.hparams.train_dataset, batch_size=batch_size, shuffle=False)
             #  delta_f (y_i) & delta_g
             for group in optimizer.param_groups:
                 for p in group['params']:
@@ -123,7 +123,7 @@ class Model(pl.LightningModule):
             #
             k = 0
             for batch_idx, (data, target, indexes) in enumerate(train_loader):
-                loss, _, _, _ = self._get_loss(batch=(data, target, indexes))
+                loss, _, _, _ = self._get_loss(batch=(data.to(device), target.to(device), indexes))
                 self.zero_grad()
                 loss.backward()
                 k+=1

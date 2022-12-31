@@ -51,5 +51,5 @@ def hash_var(var, type_='sha-1'):
 def get_hash_path(params, f, prefix, suffix) :
     f = '%s_%s'%(params.task, params.dataset_name) + f
     filename = "%s_%s%s"%(prefix, hash_var(f), ("_"+suffix) if suffix else "")
-    data_path = os.path.join(params.logdir, '%s.pth'%filename)
+    data_path = os.path.join(params.log_dir, '%s.pth'%filename)
     return data_path

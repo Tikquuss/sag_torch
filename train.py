@@ -59,7 +59,7 @@ def get_parser():
     # Training
     parser.add_argument("--max_epochs", type=int, help="Maximun number of epoch")
 
-    parser.add_argument("--validation_metrics", type=str, default="val_loss", help="Validation metrics : val_acc, val_loss, val_ppl ...") # trainer
+    parser.add_argument("--validation_metrics", type=str, default="val_acc", help="Validation metrics : val_acc, val_loss, val_ppl ...") # trainer
 
     parser.add_argument("--checkpoint_path", type=to_none, default=None, help="Load pretrained model from checkpoint and continued training")
     parser.add_argument("--model_name", type=str, default="", 
@@ -86,7 +86,7 @@ def get_parser():
 
     # Early_stopping (stop training after grokking)
     parser.add_argument("--early_stopping_grokking", type=str2dic_all, default="", help="""
-        * eg. : "patience=int(1000),metric=str(val_accuracy),metric_threshold=float(90.0)"
+        * eg. : "patience=int(1000),metric=str(val_acc),metric_threshold=float(90.0)"
         * Stop the training `patience` epochs after the `metric` has reached the value `metric_threshold`"
         """)
 
@@ -108,15 +108,15 @@ def main(params) :
         val_batch_size = params.val_batch_size,
         train_pct = params.train_pct,
         val_pct = params.val_pct,
-        data_path = params.logdir + "/data"
+        data_path = params.log_dir + "/data"
         #num_workers = params.num_workers,
     )
 
     setattr(params, "data_infos", data_module.data_infos)
     setattr(params, "train_dataset", data_module.train_dataset)
 
-    torch.save(data_module, params.logdir + "/data.pt")
-    torch.save(params, params.logdir + "/params.pt")
+    torch.save(data_module, params.log_dir + "/data.pt")
+    torch.save(params, params.log_dir + "/params.pt")
 
     # Train
     model, result = train(params, data_module)
