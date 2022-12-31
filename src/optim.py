@@ -16,6 +16,9 @@ class SAGBase(torch.optim.Optimizer):
             raise ValueError("Invalid learning rate: {}".format(lr))
         defaults = dict(lr=lr, weight_decay=weight_decay)
         super().__init__(params, defaults)
+        self.batch_mode = batch_mode
+        self.n = int(m) if batch_mode else int(n)
+        self.init_y_i = init_y_i
 
         for group in self.param_groups:
             for p in group['params']:
@@ -65,13 +68,14 @@ class SAG(torch.optim.Optimizer):
         defaults = dict(lr=lr, weight_decay=weight_decay)
         super().__init__(params, defaults)
         self.batch_mode = batch_mode
-        n = int(m) if batch_mode else int(n)
+        self.n = int(m) if batch_mode else int(n)
+        self.init_y_i = init_y_i
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
                 state['step'] = 0  # torch.zeros(1)
-                # state['y_i'] = torch.zeros_like(p.data).repeat((n, 1)) # (n, len(p.data))
-                state['y_i'] = torch.zeros(n, *p.data.shape, device = p.data.device) # 
+                # state['y_i'] = torch.zeros_like(p.data).repeat((self.n, 1)) # (n, len(p.data))
+                state['y_i'] = torch.zeros(self.n, *p.data.shape, device = p.data.device) # 
                 state['d'] = torch.zeros_like(p.data, device = p.data.device)
 
     def __setstate__(self, state):

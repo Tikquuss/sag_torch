@@ -29,7 +29,9 @@ def get_parser():
     # Dataset
     parser.add_argument("--dataset_name", choices=["mnist", "fashion_mnist", "cifar10"])
     parser.add_argument("--train_batch_size", type=int, help="Training batch size")
-    parser.add_argument("--val_batch_size", type=int, help="Validation batch size") 
+    parser.add_argument("--val_batch_size", type=int, help="Validation batch size")
+    parser.add_argument("--train_pct", type=int, default=100, help="training data fraction")
+    parser.add_argument("--val_pct", type=int, default=100, help="val data fraction") 
 
     parser.add_argument("--limit_train_batches", type=float, default=1., help="limit batches for training data")
     parser.add_argument("--limit_val_batches", type=float, default=1., help="limit batches for validation data")
@@ -104,11 +106,17 @@ def main(params) :
         dataset_name = params.dataset_name,
         train_batch_size = params.train_batch_size,
         val_batch_size = params.val_batch_size,
+        train_pct = params.train_pct,
+        val_pct = params.val_pct,
+        data_path = params.logdir + "/data"
         #num_workers = params.num_workers,
     )
 
     setattr(params, "data_infos", data_module.data_infos)
     setattr(params, "train_dataset", data_module.train_dataset)
+
+    torch.save(data_module, params.logdir + "/data.pt")
+    torch.save(params, params.logdir + "/params.pt")
 
     # Train
     model, result = train(params, data_module)

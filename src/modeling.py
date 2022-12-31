@@ -8,8 +8,10 @@ import pytorch_lightning as pl
 import wandb
 import itertools
 import math
+import os
 
 from .optim import configure_optimizers
+from .hash import get_hash_path
 
 possible_metrics = ["%s_%s"%(i, j) for i, j in itertools.product(["train", "val"], ["acc", "loss"])]
 
@@ -81,58 +83,72 @@ class Model(pl.LightningModule):
         self.reached_limit = False
 
     def configure_optimizers(self):
-        parameters = [
-            {'params': self.backbone.parameters(), 'lr': self.hparams.get("lr", 1e-3)}, 
-        ]
+        lr = self.hparams.get("lr", 1e-3)
+        self.hparams.optimizer += f",lr={lr}"
+        parameters = [{'params': self.backbone.parameters(), 'lr': lr}]
         if 'sag' in self.hparams.optimizer:
             n = self.hparams.data_infos['train_size']
             m = self.hparams.data_infos['train_n_batchs'] 
             self.hparams.optimizer += f",n={n},m={m}"
-
         optim_scheduler = configure_optimizers(parameters, self.hparams.optimizer, self.hparams.lr_scheduler)
-        optim_scheduler["optimizer"]
         if 'sag' in self.hparams.optimizer and optim_scheduler["optimizer"].init_y_i :
-            optim_scheduler["optimizer"] = self.init_y_i(optim_scheduler["optimizer"], self.hparams.train_dataset)
+            optim_scheduler["optimizer"] = self.init_y_i(parameters, optim_scheduler["optimizer"])
         return optim_scheduler
 
-    def init_y_i(self, optimizer, train_dataset):
-
-        train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=1, shuffle=False)
-        device = self.device
-        batch_mode = optimizer.batch_mode
-
-        #  delta_f (y_i) & delta_g
-        for group in optimizer.param_groups:
-            for p in group['params']:
-                state = optimizer.state[p]
-                state['delta_g'] = torch.zeros_like(p.data, device = p.data.device)
+    def init_y_i(self, parameters, optimizer, train_dataset = None, optimizer2 = None):
+        assert train_dataset is None ^ optimizer2 is None
+        f = '%s_%s_%s_%s'%(
+            self.hparams.optimizer, self.hparams.train_batch_size, self.hparams.val_batch_size, self.hparams.train_pct
+        )
+        opt_path = get_hash_path(self.hparams, f, prefix="optim", suffix="")
         #
-        k = 0
-        for batch_idx, (data, target, indexes) in enumerate(train_loader):
-            data = data.to(device)
-            target = target.to(device)
-            loss, _, _, _ = self._get_loss(batch=(data, target, indexes))
-            self.zero_grad()
-            loss.backward()
-            k+=1
+        if os.path.isfile(opt_path) :
+            optimizer2 = configure_optimizers(parameters, self.hparams.optimizer, self.hparams.lr_scheduler)["optimizer"]
+            optimizer2.load_state_dict(torch.load(opt_path))
+            for group, group2 in zip(optimizer.param_groups, optimizer2):
+                    for p, p2 in zip(group['params'], group2['params']):
+                        if p.grad is None: continue
+                        optimizer.state[p]['y_i'] = optimizer2.state[p2]['y_i']
+        #
+        if train_dataset is not None :
+            device = self.device
+            batch_mode = optimizer.batch_mode
+            batch_size=self.hparams.train_batch_size if batch_mode else 1
+            train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=batch_size, shuffle=False, device=device)
+            #  delta_f (y_i) & delta_g
             for group in optimizer.param_groups:
                 for p in group['params']:
-                    if p.grad is None:
-                        continue
-                    grad = p.grad.data
                     state = optimizer.state[p]
-                    state['y_i'][batch_idx if batch_mode else indexes] = grad + 0.0
-                    state['delta_g'].add_(state['delta_g'], alpha = (k-1)/k).add_(grad, alpha = 1/k)
-        #
-        for batch_idx, (data, target, indexes) in enumerate(train_loader):
+                    state['delta_g'] = torch.zeros_like(p.data, device = p.data.device)
+            #
+            k = 0
+            for batch_idx, (data, target, indexes) in enumerate(train_loader):
+                loss, _, _, _ = self._get_loss(batch=(data, target, indexes))
+                self.zero_grad()
+                loss.backward()
+                k+=1
+                for group in optimizer.param_groups:
+                    for p in group['params']:
+                        if p.grad is None: continue
+                        grad = p.grad.data
+                        state = optimizer.state[p]
+                        state['y_i'][batch_idx if batch_mode else indexes] = grad + 0.0
+                        state['delta_g'].add_(state['delta_g'], alpha = (k-1.0)/k).add_(grad, alpha = 1.0/k)
+            #
+            for batch_idx, (data, target, indexes) in enumerate(train_loader):
+                for group in optimizer.param_groups:
+                    for p in group['params']:
+                        if p.grad is None: continue
+                        state = optimizer.state[p]
+                        state['y_i'][batch_idx if batch_mode else indexes].sub_(state['delta_g']) 
+            #
             for group in optimizer.param_groups:
                 for p in group['params']:
-                    if p.grad is None:
-                        continue
-                    state = optimizer.state[p]
-                    state['y_i'][batch_idx if batch_mode else indexes].sub_(state['delta_g']) 
-                    #state.pop('delta_g', None)
-                    del state['delta_g']
+                    if p.grad is None: continue
+                    #optimizer.state[p].pop('delta_g', None)
+                    del optimizer.state[p]['delta_g']
+            #
+            torch.save(optimizer.state_dict(), opt_path)
         #
         return optimizer
 
@@ -162,6 +178,13 @@ class Model(pl.LightningModule):
                 opt.step(batch_idx=batch_idx, indexes=indexes)
             except TypeError :
                 opt.step()
+
+            sch = self.lr_schedulers()
+            if sch is not None :
+                if isinstance(sch, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                    sch.step(self.trainer.callback_metrics[sch.monitor])
+                else:
+                    sch.step()
 
         self.log('train_loss', loss, prog_bar=True)
         output = {"loss" : loss}

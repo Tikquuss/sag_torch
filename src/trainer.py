@@ -17,9 +17,9 @@ def train(params, data_module):
         "max_epochs": params.max_epochs,
         "default_root_dir" : root_dir,
 
-        "limit_train_batches" : pp.get("limit_train_batches", 1.0), 
-        "limit_val_batches" : pp.get("limit_val_batches", 1.0),
-        "limit_test_batches": pp.get("limit_test_batches", 1.0),
+        # "limit_train_batches" : pp.get("limit_train_batches", 1.0), 
+        # "limit_val_batches" : pp.get("limit_val_batches", 1.0),
+        # "limit_test_batches": pp.get("limit_test_batches", 1.0),
 
         "accelerator" : params.accelerator,
         "devices" : params.devices,

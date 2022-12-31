@@ -44,8 +44,8 @@ exp_id="${task}_${group_name}"
 early_stopping_grokking="patience=int(1000),metric=str(val_acc),metric_threshold=float(90.0)"
 
 opt="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001"
-#opt="sgd,weight_decay=${weight_decay},lr=${lr}"
-#opt="sag,weight_decay=${weight_decay},lr=${lr},batch_mode=False,init_y_i=True"
+#opt="sgd,weight_decay=${weight_decay}"
+#opt="sag,weight_decay=${weight_decay},batch_mode=False,init_y_i=True"
 
 python train.py \
 	--task $task \
@@ -56,6 +56,8 @@ python train.py \
 	--dataset_name $dataset_name \
 	--train_batch_size 512 \
 	--val_batch_size 512 \
+	--train_pct 100 \
+	--val_pct 100 \
 	--optimizer $opt \
 	--lr $lr \
 	--lr_scheduler $lr_scheduler \
