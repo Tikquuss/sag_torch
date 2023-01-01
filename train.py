@@ -1,11 +1,10 @@
 import torch
-
 import pytorch_lightning as pl
-
 import wandb
+from loguru import logger
 
 from src.dataset import LMLightningDataModule
-from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr, str2dic_int
+from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr, str2list_func
 from src.trainer import train
 
 from argparse import ArgumentParser
@@ -23,14 +22,14 @@ def get_parser():
     parser.add_argument("--log_dir", type=str, help="Experiment dump path") # trainer
 
     # Model
-    parser.add_argument("--c_out", type=str2dic_int, help="out channels for CNN, eg 10,10") 
-    parser.add_argument("--hidden_dim", type=str2dic_int, help="hidden dim for FNN, eg 10") 
+    parser.add_argument("--c_out", type=str2list_func(int), help="out channels for CNN, eg 10,10") 
+    parser.add_argument("--hidden_dim", type=str2list_func(int), help="hidden dim for FNN, eg 10") 
     parser.add_argument("--kernel_size", type=int, help="") 
     parser.add_argument("--kernel_size_maxPool", type=int, help="") 
     parser.add_argument("--dropout", type=float, default=0.0, help="")
 
     # Dataset
-    parser.add_argument("--dataset_name", choices=["mnist", "fashion_mnist", "cifar10"])
+    parser.add_argument("--dataset_name", choices=["mnist", "fashion_mnist", "cifar10", "cifar100"])
     parser.add_argument("--train_batch_size", type=int, help="Training batch size")
     parser.add_argument("--val_batch_size", type=int, help="Validation batch size")
     parser.add_argument("--train_pct", type=int, default=100, help="training data fraction")
@@ -105,13 +104,14 @@ def main(params) :
     # Dataset
     params.regression = params.task == "regression"
 
+    logger.info("Data module")
     data_module = LMLightningDataModule(
         dataset_name = params.dataset_name,
         train_batch_size = params.train_batch_size,
         val_batch_size = params.val_batch_size,
         train_pct = params.train_pct,
         val_pct = params.val_pct,
-        data_path = params.log_dir + "/data"
+        #data_path = params.log_dir + "/data"
         #num_workers = params.num_workers,
     )
 
@@ -122,6 +122,7 @@ def main(params) :
     torch.save(params, params.log_dir + "/params.pt")
 
     # Train
+    logger.info("Model")
     model, result = train(params, data_module)
     
     print("\n********")

@@ -116,6 +116,8 @@ class LMLightningDataModule(pl.LightningDataModule):
             "train_n_batchs":len(self.train_dataloader()), "val_n_batchs":len(self.val_dataloader())
         }
 
+        logger.info(self.data_infos)
+
     def train_dataloader(
         self,
     ) -> Union[DataLoader, List[DataLoader], Dict[str, DataLoader]]:

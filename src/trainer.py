@@ -4,6 +4,7 @@ import os
 import re 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint, EarlyStopping
+from loguru import logger
 
 from .modeling import Model
 from .utils import get_group_name, init_wandb
@@ -72,6 +73,7 @@ def train(params, data_module):
         model = Model.load_from_checkpoint(pretrained_filename)
         print(model)
     else:
+        logger.info("Training start")
         # Initialize wandb
         if params.group_name is None : params.group_name = get_group_name(params, group_vars = params.group_vars)
         init_wandb(params.use_wandb, wandb_project = params.wandb_project, group_name = params.group_name, wandb_entity = params.wandb_entity)
@@ -83,11 +85,14 @@ def train(params, data_module):
 
         #try : wandb.finish(exit_code = None, quiet = None)
         #except : pass
+        logger.info("Training end")
 
     # Test best model on validation set
+    logger.info("Testing start")
     val_result = trainer.validate(model, datamodule = data_module, verbose=False)
     data_module.val_dataloader = data_module.train_dataloader
     train_result = trainer.validate(model, datamodule = data_module, verbose=False)
+    logger.info("Testing end")
 
     result = {"train": train_result, "val": val_result}
     for k1, v1 in copy(result).items() :

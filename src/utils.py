@@ -70,9 +70,10 @@ def str2dic(s, _class = str):
 def str2dic_int(s):
     return str2dic(s, int)
         
+all_class = {"int" : int, "str" : str, "float" : float, 'bool' : bool_flag}
+
 def str2dic_all(s) :
-    """`a=int(0),b=str(y),c=float(0.1)` to {a:0, b:y, c:0.1}"""
-    all_class = {"int" : int, "str" : str, "float" : float, 'bool' : bool_flag}
+    """`a=int(0),b=str(y),c=float(0.1)` to {a:0, b:y, c:0.1}"""    
     s = to_none(s)
     if s is None :
         return s
@@ -94,3 +95,26 @@ def str2list(s):
     """`a,b` to [a, b]"""
     s = to_none(s)
     return s if s is None else s.split(",")
+
+def str2list_func(_class):
+    """`a,b` to [a, b]"""
+    def f(s) :
+        s = to_none(s)
+        return s if s is None else [_class(e) for e in s.split(",")]
+    return f
+
+def str2list_type(s):
+    """`int(a),str(b)` to [a, 'b']"""
+    s = to_none(s)
+    if s is None :
+        return s
+    if s:
+        params = []
+        for x in s.split(","):
+            val = x.split("(")
+            _class = val[0]
+            val = val[1].split(")")[0]
+            params.append(all_class[_class](val))
+    else:
+        params = []
+    return params

@@ -10,6 +10,7 @@ import itertools
 import math
 import os
 from typing import List, Union, Dict
+from loguru import logger
 
 from .optim import configure_optimizers
 from .hash import get_hash_path
@@ -19,6 +20,9 @@ possible_metrics = ["%s_%s"%(i, j) for i, j in itertools.product(["train", "val"
 class Net(nn.Module):
     def __init__(self, c_in, h_in, w_in, c_out : List, kernel_size, hidden_dim : List, n_class, kernel_size_maxPool=2, dropout=0.0):
         super(Net, self).__init__()
+
+        assert len(c_out) >= 1
+        assert len(hidden_dim) >= 1
 
         stride=1
         padding=0
@@ -68,10 +72,12 @@ class Net(nn.Module):
 
         self.fc_input_dim = h_out*w_out*c_out[-1]
         self.fc = []
+        hidden_dim = hidden_dim + [n_class]
         self.fc.append(nn.Linear(self.fc_input_dim, hidden_dim[0]))
         for i in range(1, len(hidden_dim)) :
             self.fc.append(nn.Dropout(p=dropout))
             self.fc.append(nn.Linear(hidden_dim[i-1], hidden_dim[i]))
+        self.fc.append(nn.Dropout(p=dropout))
         self.fc = nn.Sequential(*self.fc)
         
     def forward(self, x):
@@ -100,18 +106,16 @@ class Model(pl.LightningModule):
         self.automatic_optimization = False
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters(params) 
-
-        kernel_size = 5
-        kernel_size_maxPool=2
+        # model
         self.backbone = Net(
             self.hparams.data_infos["c_in"], 
             self.hparams.data_infos["h_in"], 
             self.hparams.data_infos["w_in"], 
             self.hparams.c_out, 
-            kernel_size, 
+            self.hparams.kernel_size, 
             self.hparams.hidden_dim, 
             self.hparams.data_infos["n_class"], 
-            kernel_size_maxPool, 
+            self.hparams.kernel_size_maxPool, 
             self.hparams.dropout
         )
 
@@ -142,6 +146,7 @@ class Model(pl.LightningModule):
         self.reached_limit = False
 
     def configure_optimizers(self):
+        logger.info("Configure Optimizers and LR Scheduler")
         lr = self.hparams.get("lr", 1e-3)
         self.hparams.optimizer += f",lr={lr}"
         parameters = [{'params': self.backbone.parameters(), 'lr': lr}]
@@ -155,6 +160,7 @@ class Model(pl.LightningModule):
         return optim_scheduler
 
     def init_y_i(self, parameters, optimizer):
+        logger.info("init_y_i")
         f = '%s_%s_%s_%s'%(
             self.hparams.optimizer, self.hparams.train_batch_size, self.hparams.val_batch_size, self.hparams.train_pct
         )
@@ -225,7 +231,7 @@ class Model(pl.LightningModule):
         """
         Inputs: `x`, Tensor(bs, 1, 28, 28), 
         """
-        return self.backbone(x) # (bs,)
+        return self.backbone(x) # (bs, n_class)
     
     def _get_loss(self, batch):
         """
