@@ -5,7 +5,7 @@ import pytorch_lightning as pl
 import wandb
 
 from src.dataset import LMLightningDataModule
-from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr
+from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr, str2dic_int
 from src.trainer import train
 
 from argparse import ArgumentParser
@@ -23,7 +23,10 @@ def get_parser():
     parser.add_argument("--log_dir", type=str, help="Experiment dump path") # trainer
 
     # Model
-    parser.add_argument("--hidden_dim", type=int, help="") 
+    parser.add_argument("--c_out", type=str2dic_int, help="out channels for CNN, eg 10,10") 
+    parser.add_argument("--hidden_dim", type=str2dic_int, help="hidden dim for FNN, eg 10") 
+    parser.add_argument("--kernel_size", type=int, help="") 
+    parser.add_argument("--kernel_size_maxPool", type=int, help="") 
     parser.add_argument("--dropout", type=float, default=0.0, help="")
 
     # Dataset

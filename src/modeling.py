@@ -9,6 +9,7 @@ import wandb
 import itertools
 import math
 import os
+from typing import List, Union, Dict
 
 from .optim import configure_optimizers
 from .hash import get_hash_path
@@ -16,23 +17,70 @@ from .hash import get_hash_path
 possible_metrics = ["%s_%s"%(i, j) for i, j in itertools.product(["train", "val"], ["acc", "loss"])]
 
 class Net(nn.Module):
-    def __init__(self, n_class, dropout=0.5):
+    def __init__(self, c_in, h_in, w_in, c_out : List, kernel_size, hidden_dim : List, n_class, kernel_size_maxPool=2, dropout=0.0):
         super(Net, self).__init__()
-        kernel_size=5
-        hidden_dim=50
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=10, kernel_size=kernel_size)
-        self.conv2 = nn.Conv2d(in_channels=10, out_channels=20, kernel_size=kernel_size)
-        self.conv2_drop = nn.Dropout2d(p=dropout)
-        self.fc1 = nn.Linear(320, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, n_class)
 
+        stride=1
+        padding=0
+        dilation=1
+        stride_maxPool=kernel_size_maxPool
+
+        def get_out_dim_conv(h_in, w_in, kernel_size, stride, padding, dilation):
+            h_out = math.floor((h_in + 2 * padding - dilation*(kernel_size - 1) - 1) / stride + 1)
+            w_out = math.floor((w_in + 2 * padding - dilation*(kernel_size - 1) - 1) / stride + 1)
+            return h_out, w_out
+
+        self.conv = []
+        self.conv.append(
+            nn.Conv2d(
+                in_channels=c_in, 
+                out_channels=c_out[0],
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation
+            )   
+        )
+        h_out, w_out = get_out_dim_conv(h_in, w_in, kernel_size, stride, padding, dilation, )
+        self.conv.append(
+            nn.MaxPool2d(kernel_size_maxPool, stride_maxPool, padding, dilation) 
+        )
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size_maxPool, stride_maxPool, padding, dilation)
+        for i in range(1, len(c_out)) :
+            self.conv.append(
+                nn.Conv2d(
+                    in_channels=c_out[i-1], 
+                    out_channels=c_out[i],
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    dilation=dilation
+                )   
+            )
+            h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+            self.conv.append(nn.Dropout2d(p=dropout))
+            self.conv.append(
+                nn.MaxPool2d(kernel_size_maxPool, stride_maxPool, padding, dilation) 
+            )
+            h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size_maxPool, stride_maxPool, padding, dilation)
+
+        self.conv = nn.Sequential(*self.conv)
+
+        self.fc_input_dim = h_out*w_out*c_out[-1]
+        self.fc = []
+        self.fc.append(nn.Linear(self.fc_input_dim, hidden_dim[0]))
+        for i in range(1, len(hidden_dim)) :
+            self.fc.append(nn.Dropout(p=dropout))
+            self.fc.append(nn.Linear(hidden_dim[i-1], hidden_dim[i]))
+        self.fc = nn.Sequential(*self.fc)
+        
     def forward(self, x):
-        x = F.relu(F.max_pool2d(self.conv1(x), 2))
-        x = F.relu(F.max_pool2d(self.conv2_drop(self.conv2(x)), 2))
-        x = x.view(-1, 320)
-        x = F.relu(self.fc1(x))
-        x = F.dropout(x, training=self.training)
-        x = self.fc2(x) # (bs, n_class)
+        """
+        x: (bs, c_in, h_in, w_in) or (c_in, h_in, w_in)
+        """
+        x = self.conv(x) # (bs, c_out, h_out, w_out)
+        x = x.view(-1, self.fc_input_dim) # (bs, c_out*h_out*w_out)
+        x = self.fc(x) # (bs, n_class)
         return F.log_softmax(x, dim=-1)
 
 class Model(pl.LightningModule):
@@ -53,7 +101,19 @@ class Model(pl.LightningModule):
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters(params) 
 
-        self.backbone = Net(n_class = 10, dropout=self.hparams.dropout)
+        kernel_size = 5
+        kernel_size_maxPool=2
+        self.backbone = Net(
+            self.hparams.data_infos["c_in"], 
+            self.hparams.data_infos["h_in"], 
+            self.hparams.data_infos["w_in"], 
+            self.hparams.c_out, 
+            kernel_size, 
+            self.hparams.hidden_dim, 
+            self.hparams.data_infos["n_class"], 
+            kernel_size_maxPool, 
+            self.hparams.dropout
+        )
 
         if self.hparams.regression : self.criterion = nn.MSELoss()
         else :

@@ -81,12 +81,21 @@ class LMLightningDataModule(pl.LightningDataModule):
         if self.dataset_name == "mnist" :
             self.train_dataset = torchvision.datasets.MNIST(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.MNIST(self.data_path, train=False, download=True, transform = transform)
+            c_in, h_in, w_in, n_class = 1, 28, 28, 10
         elif self.dataset_name == "fashion_mnist" :
             self.train_dataset = torchvision.datasets.FashionMNIST(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.FashionMNIST(self.data_path, train=False, download=True, transform = transform)
+            c_in, h_in, w_in, n_class = 1, 28, 28, 10
         elif self.dataset_name == "cifar10" :
             self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
+            c_in, h_in, w_in, n_class = 3, 32, 32, 10
+        elif self.dataset_name == "cifar100" :
+            self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
+            self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
+            c_in, h_in, w_in, n_class = 3, 32, 32, 100
+        else :
+            raise Exception("Unknown dataset : %s" % self.dataset_name)
 
         if 0 < self.train_pct < 100 :
             self.train_dataset = cut_dataset(self.train_dataset, pct=self.train_pct)
@@ -101,6 +110,7 @@ class LMLightningDataModule(pl.LightningDataModule):
         self.train_batch_size = min(self.train_batch_size, train_size)
         self.val_batch_size = min(self.val_batch_size, val_size)
         self.data_infos = {
+            "c_in" : c_in, "h_in" : h_in, "w_in" : w_in, "n_class" : n_class,
             "train_batch_size" : self.train_batch_size, "val_batch_size" : self.val_batch_size, 
             "train_size":train_size, "val_size":val_size, 
             "train_n_batchs":len(self.train_dataloader()), "val_n_batchs":len(self.val_dataloader())

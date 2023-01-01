@@ -51,7 +51,10 @@ python train.py \
 	--task $task \
 	--exp_id $exp_id \
 	--log_dir "${log_dir}/${random_seed}" \
+	--c_out 10,10 \
 	--hidden_dim 50 \
+	--kernel_size 5 \
+	--kernel_size_maxPool 2 \
 	--dropout $dropout \
 	--dataset_name $dataset_name \
 	--train_batch_size 512 \
