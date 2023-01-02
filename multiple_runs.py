@@ -19,7 +19,7 @@ def plot_results(params, model_dict, hparms_1, hparms_2, s1, s2):
     plt.gcf().set_size_inches(figsize)
 
     i = 1
-    for metric in (["loss"] if params.regression else ["loss", "acc"])  :
+    for metric in (["loss"] if params.data_infos["task"] == "regression" else ["loss", "acc"])  :
         ax = fig.add_subplot(1, 2, i, projection='3d')
         i += 1 
         xs, ys, zs = [], [], []
@@ -52,13 +52,13 @@ if __name__ == "__main__":
 
     random_seed=0
     log_dir="../log_files"
-    task = "classification"
+    
     dataset_name="mnist"
+    train_pct=100
 
     params = AttrDict({
         ### Main parameters
-        "task" : task,
-        "exp_id" : f"{task}_{group_name}",
+        "exp_id" : f"{group_name}",
         "log_dir" : f"{log_dir}/{random_seed}",
 
         ### Model
@@ -69,6 +69,8 @@ if __name__ == "__main__":
         "dataset_name":dataset_name,
         "train_batch_size" : 512,
         "val_batch_size" : 512,
+	    "train_pct" : train_pct,
+	    "val_pct" : 100,
 
         ### Optimizer
         "optimizer" : f"{opt},weight_decay={weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001",
@@ -91,7 +93,7 @@ if __name__ == "__main__":
         # Wandb 
         "use_wandb" : False,
         "wandb_entity" : "grokking_ppsp",
-        "wandb_project" : f"dataset={dataset_name}-task={task}",
+        "wandb_project" : f"dataset={dataset_name}",
         "group_name" : group_name,
 
         "group_vars" : None,
@@ -107,11 +109,12 @@ if __name__ == "__main__":
 
     })
 
-    params.regression = params.task == "regression"
     data_module = LMLightningDataModule(
         dataset_name = params.dataset_name,
         train_batch_size = params.train_batch_size,
         val_batch_size = params.val_batch_size,
+        train_pct = params.train_pct,
+        val_pct = params.val_pct,
         #num_workers = params.num_workers,
     )
     setattr(params, "data_infos", data_module.data_infos)

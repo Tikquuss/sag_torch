@@ -13,13 +13,52 @@ from typing import List, Union, Dict
 from loguru import logger
 
 from .optim import configure_optimizers
+from .dataset import SKLEAN_SET, TORCH_SET
 from .hash import get_hash_path
 
 possible_metrics = ["%s_%s"%(i, j) for i, j in itertools.product(["train", "val"], ["acc", "loss"])]
 
-class Net(nn.Module):
+# MLP
+def make_mlp(l, act=nn.LeakyReLU(), tail=[]):
+    """makes an MLP with no top layer activation"""
+    return nn.Sequential(*(sum(
+        [[nn.Linear(i, o)] + ([act] if n < len(l)-2 else [])
+         for n, (i, o) in enumerate(zip(l, l[1:]))], []) + tail))
+
+class MLP4Regression(nn.Module):
+    def __init__(self, l, act=nn.LeakyReLU(), tail=[], dropout=0.0):
+        super(MLP4Regression, self).__init__()
+        self.net = make_mlp(l, act, tail = tail + [nn.Dropout(dropout)])
+    def forward(self, x):
+        """
+        x: (bs, _)
+        """
+        return self.net(x) # (bs, _)
+
+class MLP4Classif(nn.Module):
+    def __init__(self, l, act=nn.LeakyReLU(), tail=[], dropout=0.0):
+        super(MLP4Classif, self).__init__()
+        self.net = make_mlp(l, act, tail = tail + [nn.Dropout(dropout)])
+    def forward(self, x):
+        """
+        x: (bs, _)
+        """
+        x = self.net(x) # (bs, n_class)
+        return F.softmax(x, dim=-1)
+        return F.log_softmax(x, dim=-1)
+
+# Text
+def Embedding(num_embeddings, embedding_dim, padding_idx=None):
+    m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
+    nn.init.normal_(m.weight, mean=0, std=embedding_dim ** -0.5)
+    if padding_idx is not None:
+        nn.init.constant_(m.weight[padding_idx], 0)
+    return m
+
+# Images
+class CNNNet(nn.Module):
     def __init__(self, c_in, h_in, w_in, c_out : List, kernel_size, hidden_dim : List, n_class, kernel_size_maxPool=2, dropout=0.0):
-        super(Net, self).__init__()
+        super(CNNNet, self).__init__()
 
         assert len(c_out) >= 1
         assert len(hidden_dim) >= 1
@@ -106,23 +145,33 @@ class Model(pl.LightningModule):
         self.automatic_optimization = False
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters(params) 
-        # model
-        self.backbone = Net(
-            self.hparams.data_infos["c_in"], 
-            self.hparams.data_infos["h_in"], 
-            self.hparams.data_infos["w_in"], 
-            self.hparams.c_out, 
-            self.hparams.kernel_size, 
-            self.hparams.hidden_dim, 
-            self.hparams.data_infos["n_class"], 
-            self.hparams.kernel_size_maxPool, 
-            self.hparams.dropout
-        )
-
-        if self.hparams.regression : self.criterion = nn.MSELoss()
-        else :
-            #self.criterion = nn.CrossEntropyLoss() 
-            self.criterion = torch.nn.NLLLoss()
+        # model and loss
+        regression = self.hparams.data_infos["task"] == "regression"
+        if self.hparams.dataset_name in TORCH_SET :
+            self.backbone = CNNNet(
+                self.hparams.data_infos["c_in"], 
+                self.hparams.data_infos["h_in"], 
+                self.hparams.data_infos["w_in"], 
+                self.hparams.c_out, 
+                self.hparams.kernel_size, 
+                self.hparams.hidden_dim, 
+                self.hparams.data_infos["n_class"], 
+                self.hparams.kernel_size_maxPool, 
+                self.hparams.dropout
+            )
+        if self.hparams.dataset_name in SKLEAN_SET :
+            _class = MLP4Regression if regression else MLP4Classif
+            self.backbone = _class(
+                l = [self.hparams.data_infos["c_in"]] +  self.hparams.hidden_dim + [self.hparams.data_infos["n_class"]],
+                act=nn.LeakyReLU(), 
+                tail=[],
+                dropout = self.hparams.dropout
+            )
+            
+        if not regression :
+            self.criterion = torch.nn.NLLLoss() if self.hparams.dataset_name in TORCH_SET else nn.CrossEntropyLoss() 
+        else : 
+            self.criterion = nn.MSELoss()
 
         self.use_wandb = self.hparams.use_wandb
 
@@ -138,7 +187,7 @@ class Model(pl.LightningModule):
         early_stopping_grokking = self.hparams.early_stopping_grokking
         if type(early_stopping_grokking) != dict : early_stopping_grokking = {} 
         self.es_patience = early_stopping_grokking.get("patience", self.hparams.max_epochs)
-        self.es_metric = early_stopping_grokking.get("metric", "val_loss" if self.hparams.regression else "val_acc") 
+        self.es_metric = early_stopping_grokking.get("metric", "val_loss" if self.hparams.data_infos["task"] == "regression" else "val_acc") 
         assert self.es_metric in possible_metrics
         self.es_metric_threshold = early_stopping_grokking.get("metric_threshold", 0.0 if 'loss' in self.es_metric else 99.0) 
         self.es_mode = (lambda s : "min" if 'loss' in s else 'max')(self.es_metric)
@@ -263,7 +312,7 @@ class Model(pl.LightningModule):
 
         self.log('train_loss', loss, prog_bar=True)
         output = {"loss" : loss}
-        if not self.hparams.regression : 
+        if not (self.hparams.data_infos["task"] == "regression") : 
             acc = (tensor.argmax(dim=-1) == y).float().mean() * 100
             output["train_acc"] = acc
             self.log('train_acc', acc, prog_bar=True)
@@ -273,7 +322,7 @@ class Model(pl.LightningModule):
         loss, tensor, y, _ = self._get_loss(batch)
         self.log('val_loss', loss, prog_bar=True)
         output = {'val_loss' : loss}
-        if not self.hparams.regression : 
+        if not (self.hparams.data_infos["task"] == "regression") : 
             acc = (tensor.argmax(dim=-1) == y).float().mean() * 100
             output["val_acc"] = acc
             self.log('val_acc', acc, prog_bar=True)
@@ -283,7 +332,7 @@ class Model(pl.LightningModule):
         loss, tensor, y, _ = self._get_loss(batch)
         #self.log('test_loss', loss, prog_bar=True)
         output = {'test_loss' : loss}
-        if not self.hparams.regression : 
+        if not (self.hparams.data_infos["task"] == "regression") : 
             acc = (tensor.argmax(dim=-1) == y).float().mean() * 100
             output["test_acc"] = acc
             #self.log('test_acc', acc, prog_bar=True)
@@ -305,7 +354,8 @@ class Model(pl.LightningModule):
 
         if 'train' in self.es_metric : logs["e_step"] = self.increase_es_limit(logs)
 
-        if self.hparams.regression : memo_condition = round(loss.item(), 10) == 0.0
+        if self.hparams.data_infos["task"] == "regression" : 
+            memo_condition = round(loss.item(), 10) == 0.0
         else : 
             accuracy = torch.stack([x["train_acc"] for x in outputs]).mean()
             logs["train_acc"] = accuracy
@@ -337,7 +387,8 @@ class Model(pl.LightningModule):
             #"val_epoch": self.current_epoch,
         }
 
-        if self.hparams.regression : comp_condition = round(loss.item(), 10) == 0.0
+        if self.hparams.data_infos["task"] == "regression" : 
+            comp_condition = round(loss.item(), 10) == 0.0
         else : 
             accuracy = torch.stack([x["val_acc"] for x in outputs]).mean()
             logs["val_acc"] = accuracy

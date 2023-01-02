@@ -3,7 +3,7 @@ import pytorch_lightning as pl
 import wandb
 from loguru import logger
 
-from src.dataset import LMLightningDataModule
+from src.dataset import LMLightningDataModule, DATA_SET
 from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr, str2list_func
 from src.trainer import train
 
@@ -16,11 +16,6 @@ def get_parser():
     # parse parameters
     parser = ArgumentParser(description="Grokking for MLP")
 
-    # Main parameters
-    parser.add_argument("--task", choices=["classification", "regression"], default="classification")
-    parser.add_argument("--exp_id", type=str, default=parser.parse_known_args()[0].task, help="Experiment id")
-    parser.add_argument("--log_dir", type=str, help="Experiment dump path") # trainer
-
     # Model
     parser.add_argument("--c_out", type=str2list_func(int), help="out channels for CNN, eg 10,10") 
     parser.add_argument("--hidden_dim", type=str2list_func(int), help="hidden dim for FNN, eg 10") 
@@ -29,7 +24,7 @@ def get_parser():
     parser.add_argument("--dropout", type=float, default=0.0, help="")
 
     # Dataset
-    parser.add_argument("--dataset_name", choices=["mnist", "fashion_mnist", "cifar10", "cifar100"])
+    parser.add_argument("--dataset_name", choices=DATA_SET)
     parser.add_argument("--train_batch_size", type=int, help="Training batch size")
     parser.add_argument("--val_batch_size", type=int, help="Validation batch size")
     parser.add_argument("--train_pct", type=int, default=100, help="training data fraction")
@@ -38,7 +33,11 @@ def get_parser():
     parser.add_argument("--limit_train_batches", type=float, default=1., help="limit batches for training data")
     parser.add_argument("--limit_val_batches", type=float, default=1., help="limit batches for validation data")
     parser.add_argument("--limit_test_batches", type=float, default=1., help="limit batches for test data")
-    
+
+    # Main parameters
+    parser.add_argument("--exp_id", type=str, default=parser.parse_known_args()[0].dataset_name, help="Experiment id")
+    parser.add_argument("--log_dir", type=str, help="Experiment dump path") # trainer
+        
     # Optimizer
     parser.add_argument("--optimizer", type=str, default="adam,beta1=0.9,beta2=0.99,eps=0.00000001", help="""
                 - optimizer parameters : adam_inverse_sqrt,beta1=0.9,beta2=0.99,eps=0.00000001 ...
@@ -102,8 +101,6 @@ def main(params) :
     torch.backends.cudnn.benchmark = False
 
     # Dataset
-    params.regression = params.task == "regression"
-
     logger.info("Data module")
     data_module = LMLightningDataModule(
         dataset_name = params.dataset_name,

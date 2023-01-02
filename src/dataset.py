@@ -4,10 +4,15 @@ import torch
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 import torchvision
 import pytorch_lightning as pl
+from sklearn import datasets as sk_dataset
 from loguru import logger
 
 DATA_PATH="../data"
 #os.makedirs(DATA_PATH, exist_ok=True)
+
+TORCH_SET = ["mnist", "fashion_mnist", "cifar10", "cifar100",]
+SKLEAN_SET = ["wine", "boston", "iris", "diabete", "digits", "linnerud"]
+DATA_SET = TORCH_SET + SKLEAN_SET
 
 class DatasetWithIndexes(Dataset):
     def __init__(self, dataset):
@@ -20,23 +25,30 @@ class DatasetWithIndexes(Dataset):
     def __len__(self):
         return len(self.dataset)
 
-def get_dataloader(x, y, train_pct, batch_size, num_workers=0):
+def get_dataloader(x, y, train_pct, include_indexes = False, train_batch_size = None, val_batch_size = None, num_workers=0, return_just_set = True):
     """We define a data constructor that we can use for various purposes later."""
   
     dataset = TensorDataset(x, y)
-    dataset = DatasetWithIndexes(dataset)
+    if include_indexes :
+        dataset = DatasetWithIndexes(dataset)
     n = len(dataset)
     train_size = train_pct * n // 100
     val_size = n - train_size
     print(f"train_size, val_size : {train_size}, {val_size}")
 
     train_set, val_set = torch.utils.data.random_split(dataset, [train_size, val_size])
-    train_loader = DataLoader(train_set, batch_size=min(batch_size, train_size), shuffle=True, drop_last=False, pin_memory=True, num_workers=num_workers)
-    val_loader = DataLoader(val_set, batch_size=min(batch_size, val_size), shuffle=False, drop_last=False, num_workers=num_workers)
-    dataloader = DataLoader(dataset, batch_size=min(batch_size, n), shuffle=False, drop_last=False, num_workers=num_workers)
+
+    if return_just_set :
+        return train_set, val_set
+
+    assert train_batch_size is not None
+    assert val_batch_size is not None
+    train_loader = DataLoader(train_set, batch_size=min(train_batch_size, train_size), shuffle=True, drop_last=False, pin_memory=True, num_workers=num_workers)
+    val_loader = DataLoader(val_set, batch_size=min(val_batch_size, val_size), shuffle=False, drop_last=False, num_workers=num_workers)
+    dataloader = DataLoader(dataset, batch_size=min(train_batch_size, n), shuffle=False, drop_last=False, num_workers=num_workers)
 
     data_infos = {
-        "train_batch_size" : min(batch_size, train_size), "val_batch_size" : min(batch_size, val_size), 
+        "train_batch_size" : min(train_batch_size, train_size), "val_batch_size" : min(val_batch_size, val_size), 
         "train_size":train_size, "val_size":val_size, 
         "train_n_batchs":len(train_loader), "val_n_batchs":len(val_loader)
     }
@@ -62,6 +74,8 @@ class LMLightningDataModule(pl.LightningDataModule):
         num_workers: int = 0,  
     ):
         super(LMLightningDataModule, self).__init__()
+        assert dataset_name in DATA_SET
+        if dataset_name in SKLEAN_SET : assert 0 < train_pct < 100
         self.dataset_name = dataset_name
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
@@ -78,26 +92,84 @@ class LMLightningDataModule(pl.LightningDataModule):
             torchvision.transforms.ToTensor(),
             torchvision.transforms.Normalize((0.1307,), (0.3081,))]
             )
+        h_in, w_in = 0, 0
         if self.dataset_name == "mnist" :
             self.train_dataset = torchvision.datasets.MNIST(self.data_path, train=True, download=True, transform = transform)
-            self.val_dataset =  torchvision.datasets.MNIST(self.data_path, train=False, download=True, transform = transform)
+            self.val_dataset = torchvision.datasets.MNIST(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 1, 28, 28, 10
+            task = "classification"
+            classes = tuple(range(10))
         elif self.dataset_name == "fashion_mnist" :
             self.train_dataset = torchvision.datasets.FashionMNIST(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.FashionMNIST(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 1, 28, 28, 10
+            task = "classification"
+            classes = tuple(range(10))
         elif self.dataset_name == "cifar10" :
             self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 3, 32, 32, 10
+            task = "classification"
+            classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
         elif self.dataset_name == "cifar100" :
             self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 3, 32, 32, 100
+            task = "classification"
+            # TODO : https://www.cs.toronto.edu/~kriz/cifar.html
+            classes = tuple(range(100))
+        elif self.dataset_name == "wine" :
+            # recognize the wine class given the features like the amount of alcohol, magnesium, phenol, color intensity, etc
+            dataset = sk_dataset.load_wine()
+            classes = tuple(dataset["target_names"])
+            c_in, n_class = 13, len(classes)
+            task = "classification"
+        elif self.dataset_name == "boston" :
+            # houses in Boston like the crime rate, nitric oxides concentration, number of rooms, distances to employment centers, tax rates, etc. 
+            # The output feature is the median value of homes.
+            dataset = sk_dataset.load_boston()
+            c_in, n_class = 13, 1
+            task = "regression"
+            classes = None
+        elif self.dataset_name == "iris" :
+            # It contains sepal and petal lengths and widths for three classes of plants
+            dataset = sk_dataset.load_iris()
+            classes = tuple(dataset["target_names"])
+            c_in, n_class = 4, len(classes)
+            task = "classification"
+        elif self.dataset_name == "diabete" :
+            # the diabetes dataset (regression)
+            dataset = sk_dataset.load_diabetes()
+            c_in, n_class = 10, 1
+            task = "regression"
+            classes = None
+        elif self.dataset_name == "digits" :
+            # Load and return the digits dataset (classification)
+            dataset = sk_dataset.load_digits()
+            classes = tuple(dataset["target_names"])
+            c_in, n_class = 64, len(classes)
+            task = "classification"
+        elif self.dataset_name == "linnerud" :
+            # Load and return the physical exercise Linnerud dataset (regression)
+            dataset = sk_dataset.load_linnerud()
+            c_in, n_class = 3, 3
+            task = "regression"
+            classes = None
         else :
+            # TODO : https://scikit-learn.org/stable/datasets/real_world.html
             raise Exception("Unknown dataset : %s" % self.dataset_name)
 
-        if 0 < self.train_pct < 100 :
+        if self.dataset_name in SKLEAN_SET :
+            y = torch.from_numpy(dataset["target"])
+            if task == "regression" : y = y.float()
+            else : y = y.long()
+            self.train_dataset, self.val_dataset = get_dataloader(
+                torch.from_numpy(dataset["data"]).float(), y,
+                train_pct=self.train_pct, 
+                num_workers=self.num_workers
+            )
+
+        if (self.dataset_name not in SKLEAN_SET) and (0 < self.train_pct < 100) :
             self.train_dataset = cut_dataset(self.train_dataset, pct=self.train_pct)
         if 0 < self.val_pct < 100 :
             self.val_dataset = cut_dataset(self.val_dataset, pct=self.val_pct)
@@ -111,12 +183,14 @@ class LMLightningDataModule(pl.LightningDataModule):
         self.val_batch_size = min(self.val_batch_size, val_size)
         self.data_infos = {
             "c_in" : c_in, "h_in" : h_in, "w_in" : w_in, "n_class" : n_class,
+            "classes" : classes, "task" : task,
             "train_batch_size" : self.train_batch_size, "val_batch_size" : self.val_batch_size, 
             "train_size":train_size, "val_size":val_size, 
             "train_n_batchs":len(self.train_dataloader()), "val_n_batchs":len(self.val_dataloader())
         }
 
         logger.info(self.data_infos)
+        for k, v in self.data_infos.items() : print(k, " --> ", v)
 
     def train_dataloader(
         self,
