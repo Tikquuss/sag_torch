@@ -2,6 +2,7 @@ import torch
 import pytorch_lightning as pl
 import wandb
 from loguru import logger
+import os
 
 from src.dataset import LMLightningDataModule, DATA_SET
 from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr, str2list_func
@@ -100,6 +101,9 @@ def main(params) :
     torch.backends.cudnn.determinstic = True
     torch.backends.cudnn.benchmark = False
 
+    root_dir = os.path.join(params.log_dir, params.exp_id, params.group_name) 
+    os.makedirs(root_dir, exist_ok=True)
+
     # Dataset
     logger.info("Data module")
     data_module = LMLightningDataModule(
@@ -108,19 +112,19 @@ def main(params) :
         val_batch_size = params.val_batch_size,
         train_pct = params.train_pct,
         val_pct = params.val_pct,
-        #data_path = params.log_dir + "/data"
+        data_path = params.log_dir + "/data"
         #num_workers = params.num_workers,
     )
 
     setattr(params, "data_infos", data_module.data_infos)
     setattr(params, "train_dataset", data_module.train_dataset)
 
-    torch.save(data_module, params.log_dir + "/data.pt")
-    torch.save(params, params.log_dir + "/params.pt")
+    torch.save(data_module, root_dir + "/data.pt")
+    torch.save(params, root_dir + "/params.pt")
 
     # Train
     logger.info("Model")
-    model, result = train(params, data_module)
+    model, result = train(params, data_module, root_dir)
     
     print("\n********")
     print(result)

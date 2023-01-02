@@ -9,10 +9,10 @@ from loguru import logger
 from .modeling import Model
 from .utils import get_group_name, init_wandb
 
-def train(params, data_module):
+def train(params, data_module, root_dir = None):
 
     # Create a PyTorch Lightning trainer with the generation callback
-    root_dir = os.path.join(params.log_dir, params.exp_id) 
+    if root_dir is None : root_dir = os.path.join(params.log_dir, params.exp_id) 
     pp = vars(params)
     trainer_config = {
         "max_epochs": params.max_epochs,
