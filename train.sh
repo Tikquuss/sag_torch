@@ -4,7 +4,7 @@
 none="_None_"
 
 ### usage ###
-# . train.sh $weight_decay $lr $dropout $opt $random_seed $dataset_name
+# . train.sh $weight_decay $lr $dropout $opt $random_seed $dataset_name $train_pct
 
 #filename=train.sh 
 #cat $filename | tr -d '\r' > $filename.new && rm $filename && mv $filename.new $filename 
@@ -14,11 +14,11 @@ weight_decay=${1-0.0}
 lr=${2-0.001}
 dropout=${3-0.5}
 opt=${4-adam}
-random_seed=${4-0}
+random_seed=${5-0}
 
 ### Data parameters
-dataset_name=${5-mnist}
-train_pct=100
+dataset_name=${6-mnist}
+train_pct=${7-100}
 
 ## Other parameters
 log_dir="../log_files"
@@ -44,11 +44,11 @@ early_stopping_grokking="patience=int(1000),metric=str(${val_metric}),metric_thr
 
 opt="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001"
 #opt="sgd,weight_decay=${weight_decay}"
-#opt="sag,weight_decay=${weight_decay},batch_mode=False,init_y_i=True"
+#opt="sag,weight_decay=${weight_decay},batch_mode=False,init_y_i=False"
 
 python train.py \
 	--exp_id $exp_id \
-	--log_dir "${log_dir}/${random_seed}" \
+	--log_dir "${log_dir}" \
 	--c_out 10,10 \
 	--hidden_dim 50 \
 	--kernel_size 5 \

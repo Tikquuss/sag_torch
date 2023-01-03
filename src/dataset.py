@@ -190,7 +190,7 @@ class LMLightningDataModule(pl.LightningDataModule):
         }
 
         logger.info(self.data_infos)
-        for k, v in self.data_infos.items() : print(k, " --> ", v)
+        for k, v in self.data_infos.items() : logger.info(str(k) + " --> " + str(v))
 
     def train_dataloader(
         self,

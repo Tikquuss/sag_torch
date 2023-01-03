@@ -101,7 +101,7 @@ def main(params) :
     torch.backends.cudnn.determinstic = True
     torch.backends.cudnn.benchmark = False
 
-    root_dir = os.path.join(params.log_dir, params.exp_id, params.group_name) 
+    root_dir = os.path.join(params.log_dir, params.exp_id, params.group_name, str(params.random_seed)) 
     os.makedirs(root_dir, exist_ok=True)
 
     # Dataset

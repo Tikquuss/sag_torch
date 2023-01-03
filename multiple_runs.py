@@ -2,7 +2,9 @@ import itertools
 import numpy as np
 import matplotlib.pyplot as plt
 import wandb
-
+import pytorch_lightning as pl
+import torch
+import os
 from src.utils import AttrDict, GROUP_VARS
 from src.dataset import LMLightningDataModule
 from src.utils import get_group_name
@@ -45,35 +47,46 @@ if __name__ == "__main__":
     
     weight_decay=0.0
     lr=0.001
-    dropout=0.0
+    dropout=0.5
     opt="adam"
-
     group_name=f"wd={weight_decay}-lr={lr}-d={dropout}-opt={opt}"
 
     random_seed=0
     log_dir="../log_files"
-    
-    dataset_name="mnist"
-    train_pct=100
+
+    dataset_name="iris"
+    train_pct=80
+
+    #val_metric="val_acc"
+    val_metric="val_loss"
+
+    opt=f"{opt},weight_decay={weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001"
+    opt="sag"
+    opt=f"sgd,weight_decay={weight_decay}"
+    opt=f"sag,weight_decay={weight_decay},batch_mode=False,init_y_i=True"
+
 
     params = AttrDict({
         ### Main parameters
-        "exp_id" : f"{group_name}",
-        "log_dir" : f"{log_dir}/{random_seed}",
+        "exp_id" : f"{dataset_name}",
+        "log_dir" : f"{log_dir}",
 
         ### Model
-        "hidden_dim" : 512,  
-        "dropout" : dropout,
+        "c_out" :  [10, 10],
+        "hidden_dim" :  [50],
+        "kernel_size" : [5],
+        "kernel_size_maxPool" : 2,
+        "dropout"  : dropout,
 
         ### Dataset
         "dataset_name":dataset_name,
         "train_batch_size" : 512,
         "val_batch_size" : 512,
-	    "train_pct" : train_pct,
-	    "val_pct" : 100,
+        "train_pct" : train_pct,
+        "val_pct" : 100,
 
         ### Optimizer
-        "optimizer" : f"{opt},weight_decay={weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001",
+        "optimizer" : opt,
         "lr" : lr,
 
         ### LR Scheduler
@@ -105,9 +118,17 @@ if __name__ == "__main__":
 
         ### Early_stopping (for grokking) : Stop the training `patience` epochs after the `metric` has reached the value `metric_threshold` 
         #"early_stopping_grokking" : None,
-        "early_stopping_grokking" : "patience=int(1000),metric=str(val_acc),metric_threshold=float(90.0)",
+        "early_stopping_grokking" : f"patience=int(1000),metric=str({val_metric}),metric_threshold=float(90.0)",
 
     })
+
+    pl.seed_everything(params.random_seed, workers=True)
+    # Ensure that all operations are deterministic on GPU (if used) for reproducibility
+    torch.backends.cudnn.determinstic = True
+    torch.backends.cudnn.benchmark = False
+
+    root_dir = os.path.join(params.log_dir, params.exp_id, params.group_name, str(params.random_seed)) 
+    os.makedirs(root_dir, exist_ok=True)
 
     data_module = LMLightningDataModule(
         dataset_name = params.dataset_name,
@@ -115,19 +136,23 @@ if __name__ == "__main__":
         val_batch_size = params.val_batch_size,
         train_pct = params.train_pct,
         val_pct = params.val_pct,
+        data_path = params.log_dir + "/data",
         #num_workers = params.num_workers,
     )
     setattr(params, "data_infos", data_module.data_infos)
+    setattr(params, "train_dataset", data_module.train_dataset)
 
     ######## Example : phase diagram with representation_lr and decoder_lr/weight_decay
 
-    #lrs = [1e-2, 1e-3, 1e-4, 1e-5] 
-    lrs = np.linspace(start=1e-1, stop=1e-5, num=10)
+    lrs = [1e-2, 1e-3, 1e-4, 1e-5] 
+    #lrs = np.linspace(start=1e-1, stop=1e-5, num=10)
 
+    weight_decays = [0, 1]
     #weight_decays = list(range(20))
-    weight_decays =  np.linspace(start=0, stop=20, num=21)
+    #weight_decays =  np.linspace(start=0, stop=20, num=21)
 
     s = "weight_decay"
+    assert s in params["optimizer"]
     print(lrs, weight_decays)
 
     model_dict = {}
@@ -143,12 +168,13 @@ if __name__ == "__main__":
         #group_vars = GROUP_VARS + ["lr", s]
         group_vars = ["lr", s]
         group_vars = list(set(group_vars))
-        params["group_name"] = get_group_name(params, group_vars = None)
+        setattr(params, s, b)
+        params["group_name"] = get_group_name(params, group_vars = group_vars)
         
         print("*"*10, i, name, "*"*10)
         i+=1
 
-        model, result = train(params, data_module)
+        model, result = train(params, data_module, root_dir)
         
         model_dict[name] = {"model": model, "result": result}
 

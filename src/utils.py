@@ -2,8 +2,7 @@ import wandb
 import argparse
 
 GROUP_VARS = [
-    "train_pct", "weight_decay", "lr", "dropout", "optimizer", 
-    "emb_dim", "hidden_dim", "n_layers"
+    "weight_decay", "lr", "dropout", "optimizer", 
 ]
 def get_group_name(params, group_vars = None) :
     if group_vars is None : group_vars = GROUP_VARS
