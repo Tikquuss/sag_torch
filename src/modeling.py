@@ -195,8 +195,7 @@ class Model(pl.LightningModule):
         self.reached_limit = False
 
     def configure_optimizers(self):
-        #logger.info("Configure Optimizers and LR Scheduler")
-        print("Configure Optimizers and LR Scheduler")
+        logger.info("Configure Optimizers and LR Scheduler")
         lr = self.hparams.get("lr", 1e-3)
         self.hparams.optimizer += f",lr={lr}"
         parameters = [{'params': self.backbone.parameters(), 'lr': lr}]
@@ -210,8 +209,7 @@ class Model(pl.LightningModule):
         return optim_scheduler
 
     def init_y_i(self, parameters, optimizer):
-        #logger.info("init_y_i")
-        print("init_y_i")
+        logger.info("init_y_i")
         f = '%s_%s_%s_%s'%(
             self.hparams.optimizer, self.hparams.train_batch_size, self.hparams.val_batch_size, self.hparams.train_pct
         )

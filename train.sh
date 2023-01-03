@@ -12,17 +12,17 @@ none="_None_"
 ### Main parameters ###
 weight_decay=${1-0.0}
 lr=${2-0.001}
-dropout=${3-0.5}
+dropout=${3-0.0}
 opt=${4-adam}
 random_seed=${5-0}
 
 ### Data parameters
 dataset_name=${6-mnist}
 train_pct=${7-100}
+max_epochs=${8-10}
 
 ## Other parameters
 log_dir="../log_files"
-max_epochs=5
 
 lr_scheduler=$none
 #lr_scheduler=reduce_lr_on_plateau,factor=0.2,patience=20,min_lr=0.00005,mode=min,monitor=val_loss

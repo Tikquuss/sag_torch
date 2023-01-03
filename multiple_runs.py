@@ -45,9 +45,9 @@ def plot_results(params, model_dict, hparms_1, hparms_2, s1, s2):
 
 if __name__ == "__main__":
     
-    weight_decay=0.0
+    weight_decay=1.0
     lr=0.001
-    dropout=0.5
+    dropout=0.1
     opt="adam"
     group_name=f"wd={weight_decay}-lr={lr}-d={dropout}-opt={opt}"
 
@@ -147,7 +147,7 @@ if __name__ == "__main__":
     lrs = [1e-2, 1e-3, 1e-4, 1e-5] 
     #lrs = np.linspace(start=1e-1, stop=1e-5, num=10)
 
-    weight_decays = [0, 1]
+    weight_decays = [0.0, 1.0]
     #weight_decays = list(range(20))
     #weight_decays =  np.linspace(start=0, stop=20, num=21)
 
