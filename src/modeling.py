@@ -426,6 +426,7 @@ class Model(pl.LightningModule):
     
     def on_train_start(self):
         db_data = getattr(self.hparams, "data_infos", None)
+        db_data = {k : v for k, v in db_data.items() if k != "classes" and (v is not None) and type(v) != str}
         if db_data is not None : self.send_dict_to_wandb(db_data, label = "data_info", title="Dataset Informations")
 
     def on_train_end(self) :

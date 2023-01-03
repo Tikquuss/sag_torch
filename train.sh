@@ -30,7 +30,7 @@ lr_scheduler=$none
 ### wandb ###
 use_wandb=False
 group_name="wd=${weight_decay}-lr=${lr}-d=${dropout}-opt=${opt}"
-wandb_entity="grokking_ppsp"
+wandb_entity="ift6512"
 wandb_project="dataset=${dataset_name}"
 
 exp_id="${dataset_name}"
@@ -42,9 +42,15 @@ val_metric=val_loss
 #early_stopping_grokking=$none
 early_stopping_grokking="patience=int(1000),metric=str(${val_metric}),metric_threshold=float(90.0)"
 
-opt="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001"
-#opt="sgd,weight_decay=${weight_decay}"
-#opt="sag,weight_decay=${weight_decay},batch_mode=False,init_y_i=False"
+if [[ $opt == "adam" ]]; then
+  opt="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001"
+elif [[ $opt == "sag" ]]; then
+	opt="sag,weight_decay=${weight_decay},batch_mode=False,init_y_i=False"
+elif [[ $opt == "sgd" ]]; then
+	opt="sgd,weight_decay=${weight_decay}"
+else 
+	exit
+fi
 
 python train.py \
 	--exp_id $exp_id \
