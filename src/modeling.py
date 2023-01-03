@@ -294,6 +294,13 @@ class Model(pl.LightningModule):
     def training_step(self, batch, batch_idx):
         loss, tensor, y, indexes = self._get_loss(batch)
 
+        self.log('train_loss', loss, prog_bar=True)
+        output = {"loss" : loss}
+        if not (self.hparams.data_infos["task"] == "regression") : 
+            acc = (tensor.argmax(dim=-1) == y).float().mean() * 100
+            output["train_acc"] = acc
+            self.log('train_acc', acc, prog_bar=True)
+
         if not self.automatic_optimization :
             opt = self.optimizers()
             opt.zero_grad()
@@ -306,16 +313,11 @@ class Model(pl.LightningModule):
             sch = self.lr_schedulers()
             if sch is not None :
                 if isinstance(sch, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                    sch.step(self.trainer.callback_metrics[sch.monitor])
+                    #sch.step(self.trainer.callback_metrics[sch.monitor])
+                    sch.step(loss.item() if "loss" in self.hparams.lr_scheduler else acc.item())
                 else:
                     sch.step()
 
-        self.log('train_loss', loss, prog_bar=True)
-        output = {"loss" : loss}
-        if not (self.hparams.data_infos["task"] == "regression") : 
-            acc = (tensor.argmax(dim=-1) == y).float().mean() * 100
-            output["train_acc"] = acc
-            self.log('train_acc', acc, prog_bar=True)
         return output 
     
     def validation_step(self, batch, batch_idx):
@@ -371,8 +373,7 @@ class Model(pl.LightningModule):
             try : scheduler = schedulers[0]
             except TypeError: scheduler = schedulers # 'xxx' object is not subscriptable
             param_groups = scheduler.optimizer.param_groups
-            logs["representation_lr"] = param_groups[0]["lr"]
-            logs["decoder_lr"] = param_groups[1]["lr"]
+            logs["lr"] = param_groups[0]["lr"]
 
         for k, v in logs.items() : self.log(k, v, prog_bar=True)
         if self.use_wandb: wandb.log(logs)

@@ -30,6 +30,7 @@ def get_parser():
     parser.add_argument("--val_batch_size", type=int, help="Validation batch size")
     parser.add_argument("--train_pct", type=int, default=100, help="training data fraction")
     parser.add_argument("--val_pct", type=int, default=100, help="val data fraction") 
+    parser.add_argument("--use_sampler", type=bool_flag, default=False, help="use sampler (SAG)") 
 
     parser.add_argument("--limit_train_batches", type=float, default=1., help="limit batches for training data")
     parser.add_argument("--limit_val_batches", type=float, default=1., help="limit batches for validation data")
@@ -112,6 +113,7 @@ def main(params) :
         val_batch_size = params.val_batch_size,
         train_pct = params.train_pct,
         val_pct = params.val_pct,
+        use_sampler = params.use_sampler, 
         data_path = params.log_dir + "/data"
         #num_workers = params.num_workers,
     )

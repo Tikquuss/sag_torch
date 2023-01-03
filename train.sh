@@ -42,12 +42,32 @@ val_metric=val_loss
 early_stopping_grokking=$none
 #early_stopping_grokking="patience=int(1000),metric=str(${val_metric}),metric_threshold=float(90.0)"
 
-if [[ $opt == "adam" ]]; then
-	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,eps=0.00000001"
+if [[ $opt == "sgd" ]]; then
+	opttmptmp="${opt},momentum=0,dampening=0,weight_decay=${weight_decay},nesterov=False"
+elif [[ $opt == "nesterov" ]]; then
+	opttmptmp="sgd,momentum=0,dampening=0,weight_decay=${weight_decay},nesterov=True"
+elif [[ $opt == "asgd" ]]; then
+	opttmptmp="${opt},lambd=0.0001,alpha=0.75,t0=1000000.0,weight_decay=${weight_decay}"
+elif [[ $opt == "rmsprop" ]]; then
+	opttmptmp="${opt},alpha=0.99,weight_decay=${weight_decay},momentum=0,centered=False"
+elif [[ $opt == "rprop" ]]; then
+	opttmptmp="${opt},etaplus=0.5,etaminus=1.2,step_min=1e-06,step_max=50"
+elif [[ $opt == "adadelta" ]]; then
+	opttmptmp="${opt},rho=0.9,weight_decay=${weight_decay}"
+elif [[ $opt == "adagrad" ]]; then
+	opttmptmp="${opt},lr_decay=0,weight_decay=${weight_decay},initial_accumulator_value=0"
+elif [[ $opt == "adam" ]]; then
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,amsgrad=False"
+elif [[ $opt == "adamax" ]]; then
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99"
+elif [[ $opt == "custom_adam" ]]; then
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99"
+elif [[ $opt == "adam_inverse_sqrt" ]]; then
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,warmup_updates=4000,warmup_init_lr=1e-7,exp_factor=0.5"
+elif [[ $opt == "adam_cosine" ]]; then
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,warmup_updates=4000,warmup_init_lr=1e-7,min_lr=1e-9,init_period=1000000,period_mult=1,lr_shrink=0.75"
 elif [[ $opt == "sag" ]]; then
-	opttmptmp="sag,weight_decay=${weight_decay},batch_mode=False,init_y_i=False"
-elif [[ $opt == "sgd" ]]; then
-	opttmptmp="sgd,weight_decay=${weight_decay}"
+	opttmptmp="${opt},weight_decay=${weight_decay},batch_mode=False,init_y_i=False"
 else 
 	echo "Error $opt"
 	exit
@@ -66,6 +86,7 @@ python train.py \
 	--val_batch_size 512 \
 	--train_pct $train_pct \
 	--val_pct 100 \
+	--use_sampler False \
 	--optimizer $opttmptmp \
 	--lr $lr \
 	--lr_scheduler $lr_scheduler \

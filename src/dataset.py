@@ -1,11 +1,14 @@
 import os
 from typing import List, Union, Dict
 import torch
-from torch.utils.data import DataLoader, TensorDataset, Dataset
+from torch.utils.data import DataLoader, TensorDataset, Dataset, WeightedRandomSampler, RandomSampler
 import torchvision
 import pytorch_lightning as pl
 from sklearn import datasets as sk_dataset
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import train_test_split
 from loguru import logger
+import math
 
 DATA_PATH="../data"
 #os.makedirs(DATA_PATH, exist_ok=True)
@@ -70,6 +73,7 @@ class LMLightningDataModule(pl.LightningDataModule):
         val_batch_size: int,
         train_pct: int = 100,
         val_pct: int = 100,
+        use_sampler : bool = False, 
         data_path: str = DATA_PATH,
         num_workers: int = 0,  
     ):
@@ -83,35 +87,62 @@ class LMLightningDataModule(pl.LightningDataModule):
         self.val_pct = val_pct
         self.data_path = data_path
         self.num_workers = num_workers
+
+        self.use_sampler = use_sampler
+        self.sampler = None
+
         self.prepare_data()
         
     def prepare_data(self):
         logger.info(f"Dataset {self.dataset_name} loading....")
         os.makedirs(self.data_path, exist_ok=True)
-        transform = torchvision.transforms.Compose([
-            torchvision.transforms.ToTensor(),
-            torchvision.transforms.Normalize((0.1307,), (0.3081,))]
-            )
         h_in, w_in = 0, 0
         if self.dataset_name == "mnist" :
+            # https://discuss.pytorch.org/t/normalization-in-the-mnist-example/457?u=pascal_notsawo
+            # https://discuss.pytorch.org/t/normalization-in-the-mnist-example/457/31?u=pascal_notsawo
+            """
+            data = train_dataset.data.float()
+            mean = np.round(data.mean(axis=(0,1,2))/255,4)
+            std = np.round(data.std(axis=(0,1,2))/255,4)
+            """
+            mean, std = 0.1307000070810318, 0.30809998512268066
+            transform = torchvision.transforms.Compose([
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize((mean,), (std,))])
             self.train_dataset = torchvision.datasets.MNIST(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset = torchvision.datasets.MNIST(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 1, 28, 28, 10
             task = "classification"
             classes = tuple(range(10))
         elif self.dataset_name == "fashion_mnist" :
+            mean, std = 0.28600001335144043, 0.3529999852180481
+            transform = torchvision.transforms.Compose([
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize((mean,), (std,))])
             self.train_dataset = torchvision.datasets.FashionMNIST(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.FashionMNIST(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 1, 28, 28, 10
             task = "classification"
             classes = tuple(range(10))
         elif self.dataset_name == "cifar10" :
+            mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
+            transform = torchvision.transforms.Compose([
+                #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
+                #torchvision.transforms.RandomHorizontalFlip(p=0.5),
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(mean=mean, std=std)])
             self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 3, 32, 32, 10
             task = "classification"
             classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
         elif self.dataset_name == "cifar100" :
+            mean, std = [0.5071, 0.4865, 0.4409], [0.2673, 0.2564, 0.2762]
+            transform = torchvision.transforms.Compose([
+                #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
+                #torchvision.transforms.RandomHorizontalFlip(p=0.5),
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(mean=mean, std=std)])
             self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 3, 32, 32, 100
@@ -160,11 +191,18 @@ class LMLightningDataModule(pl.LightningDataModule):
             raise Exception("Unknown dataset : %s" % self.dataset_name)
 
         if self.dataset_name in SKLEAN_SET :
+            x = dataset["data"]
+            # Scale data to have mean 0 and variance 1 
+            # which is importance for convergence of the neural network
+            scaler = StandardScaler()
+            x = scaler.fit_transform(x)
+
             y = torch.from_numpy(dataset["target"])
             if task == "regression" : y = y.float()
             else : y = y.long()
+
             self.train_dataset, self.val_dataset = get_dataloader(
-                torch.from_numpy(dataset["data"]).float(), y,
+                torch.from_numpy(x).float(), y,
                 train_pct=self.train_pct, 
                 num_workers=self.num_workers
             )
@@ -192,14 +230,20 @@ class LMLightningDataModule(pl.LightningDataModule):
         logger.info(self.data_infos)
         for k, v in self.data_infos.items() : logger.info(str(k) + " --> " + str(v))
 
-    def train_dataloader(
-        self,
-    ) -> Union[DataLoader, List[DataLoader], Dict[str, DataLoader]]:
+        if self.use_sampler :
+            weights = torch.ones(train_size) / train_size 
+            num_samples = train_size
+            #num_samples =  math.ceil(train_size / self.train_batch_size) * max_epochs
+            self.sampler = WeightedRandomSampler(weights = weights, num_samples=num_samples, replacement=True, generator=None)
+            #self.sampler = RandomSampler(data_source=self.train_dataset, replacement=True, num_samples=num_samples, generator=None)
+
+    def train_dataloader(self) -> Union[DataLoader, List[DataLoader], Dict[str, DataLoader]]:
         return DataLoader(
             self.train_dataset,
             batch_size=self.train_batch_size,
             num_workers=self.num_workers,
-            shuffle=True
+            shuffle=not self.use_sampler,
+            sampler=self.sampler
         )
 
     def val_dataloader(self) -> Union[DataLoader, List[DataLoader]]:

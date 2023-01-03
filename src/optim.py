@@ -6,6 +6,7 @@ import inspect
 import torch
 from torch import optim
 
+from .utils import bool_flag
 
 class SAGBase(torch.optim.Optimizer):
     """
@@ -55,81 +56,6 @@ class SAGBase(torch.optim.Optimizer):
                 if group['weight_decay'] != 0:
                     p.data.add_(-group['weight_decay'] * group['lr'], p.data)
                 p.data.add_(-group['lr'], state['d'])
-
-        return loss
-
-class AdamSAG(optim.Optimizer):
-    """
-    Adam + SAG
-    """
-
-    def __init__(self, params, lr=1e-3, betas=(0.9, 0.999), eps=1e-8, weight_decay=0):
-        if not 0.0 <= lr:
-            raise ValueError("Invalid learning rate: {}".format(lr))
-        if not 0.0 <= eps:
-            raise ValueError("Invalid epsilon value: {}".format(eps))
-        if not 0.0 <= betas[0] < 1.0:
-            raise ValueError("Invalid beta parameter at index 0: {}".format(betas[0]))
-        if not 0.0 <= betas[1] < 1.0:
-            raise ValueError("Invalid beta parameter at index 1: {}".format(betas[1]))
-        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super().__init__(params, defaults)
-
-        for group in self.param_groups:
-            for p in group['params']:
-                state = self.state[p]
-                state['step'] = 0  # torch.zeros(1)
-                state['exp_avg'] = torch.zeros_like(p.data)
-                state['exp_avg_sq'] = torch.zeros_like(p.data)
-
-    def __setstate__(self, state):
-        super().__setstate__(state)
-
-    def step(self, closure=None):
-        """
-        Step.
-        """
-        loss = None
-        if closure is not None:
-            loss = closure()
-
-        for group in self.param_groups:
-            for p in group['params']:
-                if p.grad is None:
-                    continue
-                grad = p.grad.data
-                if grad.is_sparse:
-                    raise RuntimeError('Adam does not support sparse gradients, please consider SparseAdam instead')
-
-                state = self.state[p]
-
-                exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
-                beta1, beta2 = group['betas']
-
-                state['step'] += 1
-
-                # if group['weight_decay'] != 0:
-                #     grad.add_(group['weight_decay'], p.data)
-
-                # Decay the first and second moment running average coefficient
-                #exp_avg.mul_(beta1).add_(1 - beta1, grad)
-                #exp_avg_sq.mul_(beta2).addcmul_(1 - beta2, grad, grad)
-                # Thanks https://github.com/clovaai/AdamP/issues/5
-                exp_avg.mul_(beta1).add_(grad, alpha=1-beta1) 
-                exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1-beta2) 
-                
-                denom = exp_avg_sq.sqrt().add_(group['eps'])
-                # denom = exp_avg_sq.sqrt().clamp_(min=group['eps'])
-
-                bias_correction1 = 1 - beta1 ** state['step']  # .item()
-                bias_correction2 = 1 - beta2 ** state['step']  # .item()
-                step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
-
-                if group['weight_decay'] != 0:
-                    p.data.add_(-group['weight_decay'] * group['lr'], p.data)
-
-                # TODO : https://github.com/pytorch/pytorch/issues/32861
-                p.data.addcdiv_(-step_size, exp_avg, denom)
 
         return loss
 
@@ -328,7 +254,6 @@ class AdamInverseSqrtWithWarmup(CustomAdam):
             param_group['num_updates'] += 1
             param_group['lr'] = self.get_lr_for_step(param_group['num_updates'])
 
-
 class AdamCosineWithWarmup(CustomAdam):
     """
     Assign LR based on a cyclical schedule that follows the cosine function.
@@ -429,6 +354,9 @@ class NoamOpt:
         self.optimizer.zero_grad()
 
 def get_params_from_string(s : str, separator = ",", have_method=True):
+    re_float="^[+-]?(\d+(\.\d*)?|\.\d+)$"
+    # https://stackoverflow.com/a/41668652/11814682
+    re_scient="[+\-]?[^A-Za-z]?(?:0|[1-9]\d*)(?:\.\d*)?(?:[eE][+\-]?\d+)"
     if "," in s:
         if have_method :
             method = s[:s.find(separator)]
@@ -441,7 +369,7 @@ def get_params_from_string(s : str, separator = ",", have_method=True):
             assert len(split) == 2
             try:
                 float(split[1])
-                assert re.match("^[+-]?(\d+(\.\d*)?|\.\d+)$", split[1]) is not None
+                assert (re.match(re_float, split[1]) is not None) or (re.match(re_scient, split[1]) is not None)
                 optim_params[split[0]] = float(split[1])
             except ValueError:
                 optim_params[split[0]] = split[1]
@@ -461,45 +389,69 @@ def get_optimizer(parameters, s, noamopt=""):
         -"factor_ae=1,warmup_ae=200"
     """
     method, optim_params = get_params_from_string(s, separator = ",", have_method=True)
-    #print(method, optim_params)
-
-    if "sag" in method :
+    #al = "sgd","asgd","rmsprop","rprop","adadelta","adagrad","adam","adamax","custom_adam","adam_inverse_sqrt","adam_cosine","sag"
+    #al = "sgd","asgd","rmsprop","rprop","adadelta","adagrad","adam","adamax","sag"
+    if method == 'sgd':
+        # https://pytorch.org/docs/stable/generated/torch.optim.SGD.html
+        #"lr=,momentum=0,dampening=0,weight_decay=0,nesterov=False"
+        optim_params["nesterov"] = bool_flag(optim_params.get("nesterov", 'False'))
+        optim_fn = optim.SGD
+        assert 'lr' in optim_params
+    elif method == 'asgd':
+        # https://pytorch.org/docs/stable/generated/torch.optim.ASGD.html
+        # https://sci-hub.se/10.1137/0330046
+        # https://www.quora.com/How-does-Averaged-Stochastic-Gradient-Decent-ASGD-work
+        # lr=,lambd=0.0001,alpha=0.75,t0=1000000.0,weight_decay=0
+        optim_fn = optim.ASGD
+    elif method == 'rmsprop':
+        # https://pytorch.org/docs/stable/generated/torch.optim.RMSprop.html
+        #lr=,alpha=0.99,weight_decay=0,momentum=0,centered=False
+        optim_params["centered"] = bool_flag(optim_params.get("centered", 'False'))
+        optim_fn = optim.RMSprop
+    elif method == 'rprop':
+        # https://pytorch.org/docs/stable/generated/torch.optim.Rprop.html
+        # lr=,etas=(0.5, 1.2), step_sizes=(1e-06, 50)
+        # lr=,etaplus=0.5,etaminus=1.2,step_min=1e-06,step_max=50
+        optim_params['etas'] = (optim_params.pop('etaplus', 0.5), optim_params.pop('etaminus', 1.2))
+        optim_params['step_sizes'] = (optim_params.pop('step_min', 1e-06), optim_params.pop('step_max', 50))
+        optim_fn = optim.Rprop
+    elif method == 'adadelta':
+        # https://pytorch.org/docs/stable/generated/torch.optim.Adadelta.html
+        # lr=,rho=0.9,weight_decay=0
+        optim_fn = optim.Adadelta
+    elif method == 'adagrad':
+        # https://pytorch.org/docs/stable/generated/torch.optim.Adagrad.html
+        # lr=,lr_decay=0,weight_decay=0,initial_accumulator_value=0
+        optim_fn = optim.Adagrad
+    elif method in ['adam', 'adamax', 'custom_adam', 'adam_inverse_sqrt', 'adam_cosine']:
+        # lr, betas,weight decay,amsgrad
+        optim_params['betas'] = (optim_params.pop('beta1', 0.9), optim_params.pop('beta2', 0.999))
+        if method == 'adam' :
+            # lr=0.001, betas=(0.9,0.999),eps=1e-08,weight_decay=0,amsgrad=False 
+            optim_params["amsgrad"] = bool_flag(optim_params.get("amsgrad", 'False'))
+            optim_fn = optim.Adam
+        elif method == 'adamax':
+            # https://pytorch.org/docs/stable/generated/torch.optim.Adamax.html
+            # lr=0.002, betas=(0.9,0.999),eps=1e-08,weight_decay=0
+            optim_fn = optim.Adamax
+        elif method == 'custom_adam' :
+            # lr=,betas=(0.9,0.999),eps=1e-8,weight_decay=0
+            optim_fn = CustomAdam 
+        elif method == 'adam_inverse_sqrt':
+            # lr=,betas=(0.9,0.999),eps=1e-8,weight_decay=0,warmup_updates=4000,warmup_init_lr=1e-7,exp_factor=0.5
+            optim_fn = AdamInverseSqrtWithWarmup
+        elif method == 'adam_cosine':
+            # lr=,betas=(0.9, 0.999),eps=1e-8,weight_decay=0,warmup_updates=4000,warmup_init_lr=1e-7,min_lr=1e-9,init_period=1000000,period_mult=1,lr_shrink=0.75
+            optim_fn = AdamCosineWithWarmup
+    elif "sag" in method :
         if method == 'sagbase':
             optim_fn = SAGBase
         elif method == 'sag':
             assert 'batch_mode' in optim_params
             assert 'init_y_i' in optim_params
-            from .utils import bool_flag
             optim_params["batch_mode"] = bool_flag(optim_params["batch_mode"])
             optim_params["init_y_i"] = bool_flag(optim_params["init_y_i"])
             optim_fn = SAG
-    elif method == 'adadelta':
-        optim_fn = optim.Adadelta
-    elif method == 'adagrad':
-        optim_fn = optim.Adagrad
-    elif method in ['custom_adam', 'adam', 'adam_inverse_sqrt', 'adam_cosine']:
-        optim_params['betas'] = (optim_params.get('beta1', 0.9), optim_params.get('beta2', 0.999))
-        optim_params.pop('beta1', None)
-        optim_params.pop('beta2', None)
-        if method == 'custom_adam' :
-            optim_fn = CustomAdam 
-        elif method == 'adam' :
-            optim_fn = optim.Adam
-        elif method == 'adam_inverse_sqrt':
-            optim_fn = AdamInverseSqrtWithWarmup
-        elif method == 'adam_cosine':
-            optim_fn = AdamCosineWithWarmup
-    elif method == 'adamax':
-        optim_fn = optim.Adamax
-    elif method == 'asgd':
-        optim_fn = optim.ASGD
-    elif method == 'rmsprop':
-        optim_fn = optim.RMSprop
-    elif method == 'rprop':
-        optim_fn = optim.Rprop
-    elif method == 'sgd':
-        optim_fn = optim.SGD
-        assert 'lr' in optim_params
     else:
         raise Exception('Unknown optimization method: "%s"' % method)
 
