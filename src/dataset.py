@@ -148,15 +148,13 @@ class LMLightningDataModule(pl.LightningDataModule):
         elif self.dataset_name == "cifar10" :
             #mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
             mean, std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
-
             train_transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(mean=mean, std=std),
-                # 
+                # https://medium.com/mlearning-ai/cifar10-image-classification-in-pytorch-e5185176fbef
                 #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
                 torchvision.transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
                 torchvision.transforms.RandomHorizontalFlip(p=0.5)])
-
             transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(mean=mean, std=std)])
@@ -168,10 +166,17 @@ class LMLightningDataModule(pl.LightningDataModule):
         elif self.dataset_name == "cifar100" :
             #mean, std = [0.5071, 0.4865, 0.4409], [0.2673, 0.2564, 0.2762]
             mean, std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
+            train_transform = torchvision.transforms.Compose([
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(mean=mean, std=std),
+                # https://medium.com/mlearning-ai/cifar10-image-classification-in-pytorch-e5185176fbef
+                #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
+                torchvision.transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                torchvision.transforms.RandomHorizontalFlip(p=0.5)])
             transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(mean=mean, std=std)])
-            self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
+            self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = train_transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 3, 32, 32, 100
             task = "classification"
