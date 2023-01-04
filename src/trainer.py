@@ -53,6 +53,8 @@ def train(params, data_module, root_dir = None):
             mode = mode,
             monitor=validation_metrics,
             save_top_k=params.save_top_k,
+            save_last=True,
+            every_n_epochs=getattr(params, 'every_n_epochs', 1)
     )
 
     trainer_config["callbacks"] = [

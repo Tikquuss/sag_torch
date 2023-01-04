@@ -29,9 +29,11 @@ lr_scheduler=$none
 
 ### wandb ###
 use_wandb=False
-group_name="wd=${weight_decay}-lr=${lr}-d=${dropout}-opt=${opt}"
 wandb_entity="ift6512"
-wandb_project="dataset=${dataset_name}"
+# group_name="wd=${weight_decay}-lr=${lr}-d=${dropout}-opt=${opt}"
+# wandb_project="dataset=${dataset_name}"
+group_name="${opt}"
+wandb_project="${dataset_name}-wd=${weight_decay}-lr=${lr}-d=${dropout}"
 
 exp_id="${dataset_name}"
 
@@ -42,14 +44,22 @@ val_metric=val_loss
 early_stopping_grokking=$none
 #early_stopping_grokking="patience=int(1000),metric=str(${val_metric}),metric_threshold=float(90.0)"
 
+save_top_k=-1
+#save_top_k=2
+every_n_epochs=100
+
 if [[ $opt == "sgd" ]]; then
 	opttmptmp="${opt},momentum=0,dampening=0,weight_decay=${weight_decay},nesterov=False"
+elif [[ $opt == "momentum" ]]; then
+	opttmptmp="sgd,momentum=0.9,dampening=0,weight_decay=${weight_decay},nesterov=True"
 elif [[ $opt == "nesterov" ]]; then
 	opttmptmp="sgd,momentum=0,dampening=0,weight_decay=${weight_decay},nesterov=True"
 elif [[ $opt == "asgd" ]]; then
 	opttmptmp="${opt},lambd=0.0001,alpha=0.75,t0=1000000.0,weight_decay=${weight_decay}"
 elif [[ $opt == "rmsprop" ]]; then
 	opttmptmp="${opt},alpha=0.99,weight_decay=${weight_decay},momentum=0,centered=False"
+elif [[ $opt == "rmsprop_mom" ]]; then
+	opttmptmp="rmsprop,alpha=0.99,weight_decay=${weight_decay},momentum=0.9,centered=False"
 elif [[ $opt == "rprop" ]]; then
 	opttmptmp="${opt},etaplus=0.5,etaminus=1.2,step_min=1e-06,step_max=50"
 elif [[ $opt == "adadelta" ]]; then
@@ -58,6 +68,8 @@ elif [[ $opt == "adagrad" ]]; then
 	opttmptmp="${opt},lr_decay=0,weight_decay=${weight_decay},initial_accumulator_value=0"
 elif [[ $opt == "adam" ]]; then
 	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,amsgrad=False"
+elif [[ $opt == "amsgrad" ]]; then
+	opttmptmp="adam,weight_decay=${weight_decay},beta1=0.9,beta2=0.99,amsgrad=True"
 elif [[ $opt == "adamax" ]]; then
 	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99"
 elif [[ $opt == "custom_adam" ]]; then
@@ -81,6 +93,7 @@ python train.py \
 	--kernel_size 5 \
 	--kernel_size_maxPool 2 \
 	--dropout $dropout \
+	--use_resnet False \
 	--dataset_name $dataset_name \
 	--train_batch_size 512 \
 	--val_batch_size 512 \
@@ -93,8 +106,8 @@ python train.py \
 	--max_epochs $max_epochs \
 	--validation_metrics $val_metric \
 	--checkpoint_path $none \
-	--every_n_epochs 100 \
-	--save_top_k -1 \
+	--every_n_epochs $every_n_epochs \
+	--save_top_k $save_top_k \
 	--use_wandb $use_wandb \
 	--wandb_entity $wandb_entity \
 	--wandb_project $wandb_project \

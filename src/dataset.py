@@ -15,7 +15,10 @@ DATA_PATH="../data"
 
 TORCH_SET = ["mnist", "fashion_mnist", "cifar10", "cifar100",]
 SKLEAN_SET = ["wine", "boston", "iris", "diabete", "digits", "linnerud"]
-DATA_SET = TORCH_SET + SKLEAN_SET
+OTHER_SET = ["arithmetic"]
+DATA_SET = TORCH_SET + SKLEAN_SET + OTHER_SET
+
+from .utils import str2dic, bool_flag
 
 class DatasetWithIndexes(Dataset):
     def __init__(self, dataset):
@@ -64,7 +67,24 @@ def cut_dataset(dataset, pct):
     print(f"size, n-size : {size}, {n-size}")
     remaining, _ = torch.utils.data.random_split(dataset, [size, n - size])
     return remaining
-    
+
+def get_arithmetic_set(p, regression, operator="+", ij_equal_ji = True, modular = True):
+    """We define a data constructor that we can use for various purposes later."""
+    assert operator in ["+", "*"]
+    if ij_equal_ji :
+        x = []
+        for i in range(p) :
+          for j in range(i, p) :
+              x.append([i, j])
+        x = torch.LongTensor(x) # (p*(p+1)/2, 2)
+    else :
+        ij = torch.arange(p) # (p,)
+        x = torch.cartesian_prod(ij, ij) # (p^2, 2)
+    y = x.sum(1) if operator=="+" else x.prod(1) # (p*(p+1)/2,) if ij_equal_ji, else # (p^2,)
+    if modular : y = torch.remainder(y, p)
+    if regression : y = y.float() 
+    return x, y
+
 class LMLightningDataModule(pl.LightningDataModule):
     def __init__(
         self,
@@ -78,8 +98,8 @@ class LMLightningDataModule(pl.LightningDataModule):
         num_workers: int = 0,  
     ):
         super(LMLightningDataModule, self).__init__()
-        assert dataset_name in DATA_SET
-        if dataset_name in SKLEAN_SET : assert 0 < train_pct < 100
+        assert dataset_name in DATA_SET or "arithmetic" in dataset_name
+        if dataset_name in SKLEAN_SET or "arithmetic" in dataset_name : assert 0 < train_pct < 100
         self.dataset_name = dataset_name
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
@@ -97,6 +117,7 @@ class LMLightningDataModule(pl.LightningDataModule):
         logger.info(f"Dataset {self.dataset_name} loading....")
         os.makedirs(self.data_path, exist_ok=True)
         h_in, w_in = 0, 0
+        tmp = {}
         if self.dataset_name == "mnist" :
             # https://discuss.pytorch.org/t/normalization-in-the-mnist-example/457?u=pascal_notsawo
             # https://discuss.pytorch.org/t/normalization-in-the-mnist-example/457/31?u=pascal_notsawo
@@ -125,22 +146,29 @@ class LMLightningDataModule(pl.LightningDataModule):
             task = "classification"
             classes = tuple(range(10))
         elif self.dataset_name == "cifar10" :
-            mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
-            transform = torchvision.transforms.Compose([
+            #mean, std = [0.4914, 0.4822, 0.4465], [0.247, 0.2435, 0.2616]
+            mean, std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
+
+            train_transform = torchvision.transforms.Compose([
+                torchvision.transforms.ToTensor(),
+                torchvision.transforms.Normalize(mean=mean, std=std),
+                # 
                 #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
-                #torchvision.transforms.RandomHorizontalFlip(p=0.5),
+                torchvision.transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                torchvision.transforms.RandomHorizontalFlip(p=0.5)])
+
+            transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(mean=mean, std=std)])
-            self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
+            self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = train_transform)
             self.val_dataset =  torchvision.datasets.CIFAR10(self.data_path, train=False, download=True, transform = transform)
             c_in, h_in, w_in, n_class = 3, 32, 32, 10
             task = "classification"
             classes = ('plane', 'car', 'bird', 'cat', 'deer', 'dog', 'frog', 'horse', 'ship', 'truck')
         elif self.dataset_name == "cifar100" :
-            mean, std = [0.5071, 0.4865, 0.4409], [0.2673, 0.2564, 0.2762]
+            #mean, std = [0.5071, 0.4865, 0.4409], [0.2673, 0.2564, 0.2762]
+            mean, std = [0.5, 0.5, 0.5], [0.5, 0.5, 0.5]
             transform = torchvision.transforms.Compose([
-                #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
-                #torchvision.transforms.RandomHorizontalFlip(p=0.5),
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(mean=mean, std=std)])
             self.train_dataset = torchvision.datasets.CIFAR10(self.data_path, train=True, download=True, transform = transform)
@@ -186,6 +214,30 @@ class LMLightningDataModule(pl.LightningDataModule):
             c_in, n_class = 3, 3
             task = "regression"
             classes = None
+        elif "arithmetic" in self.dataset_name :
+            #"arithmetic,op=+,p=200,reg=False,mod=True,ijeqji=True"
+            s = self.dataset_name.split("arithmetic,")[1]
+            s = str2dic(s)
+            #assert 'p' in s.keys()
+            op, p, reg, mod, ijeqji = s["op"], int(s["p"]), bool_flag(s["reg"]), bool_flag(s["reg"]), bool_flag(s["ijeqji"])
+            tmp = {"p" : p, "regression" : reg, "operator" : op, "ij_equal_ji" : ijeqji, "modular" : mod}
+            #x, y = get_arithmetic_set(p, regression=reg, operator=op, ij_equal_ji = ijeqji, modular = mod)
+            x, y = get_arithmetic_set(**tmp)
+            self.train_dataset, self.val_dataset = get_dataloader(
+                x, y,
+                train_pct=self.train_pct, 
+                num_workers=self.num_workers
+            )
+            n_class = 2*(p-1)+1 if op == "+" else (p-1)**2+1
+            n_class = p if mod else n_class
+            n_class = 1 if reg else n_class
+            if reg :
+                classes = None
+                task = "regression" if reg else "classification"
+            else :
+                classes = tuple(range(n_class))
+                task = "regression" if reg else "classification"
+            c_in = 0
         else :
             # TODO : https://scikit-learn.org/stable/datasets/real_world.html
             raise Exception("Unknown dataset : %s" % self.dataset_name)
@@ -207,7 +259,8 @@ class LMLightningDataModule(pl.LightningDataModule):
                 num_workers=self.num_workers
             )
 
-        if (self.dataset_name not in SKLEAN_SET) and (0 < self.train_pct < 100) :
+        cond = (self.dataset_name not in SKLEAN_SET) or ("arithmetic" not in self.dataset_name) 
+        if cond and (0 < self.train_pct < 100) :
             self.train_dataset = cut_dataset(self.train_dataset, pct=self.train_pct)
         if 0 < self.val_pct < 100 :
             self.val_dataset = cut_dataset(self.val_dataset, pct=self.val_pct)
@@ -226,6 +279,7 @@ class LMLightningDataModule(pl.LightningDataModule):
             "train_size":train_size, "val_size":val_size, 
             "train_n_batchs":len(self.train_dataloader()), "val_n_batchs":len(self.val_dataloader())
         }
+        for k, v in tmp.items() : self.data_infos[k] = v
 
         logger.info(self.data_infos)
         for k, v in self.data_infos.items() : logger.info(str(k) + " --> " + str(v))

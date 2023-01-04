@@ -3,12 +3,14 @@ import pytorch_lightning as pl
 import wandb
 from loguru import logger
 import os
+import argparse
+from argparse import ArgumentParser
 
 from src.dataset import LMLightningDataModule, DATA_SET
 from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr, str2list_func
 from src.trainer import train
 
-from argparse import ArgumentParser
+
 
 def get_parser():
     """
@@ -23,9 +25,16 @@ def get_parser():
     parser.add_argument("--kernel_size", type=int, help="") 
     parser.add_argument("--kernel_size_maxPool", type=int, help="") 
     parser.add_argument("--dropout", type=float, default=0.0, help="")
+    parser.add_argument("--use_resnet", type=bool_flag, default=False, help="")
 
+    def ds(dataset_name):
+        if dataset_name in DATA_SET or "arithmetic" in dataset_name : return dataset_name
+        raise argparse.ArgumentTypeError("Invalid value for dataset name!")
     # Dataset
-    parser.add_argument("--dataset_name", choices=DATA_SET)
+    parser.add_argument("--dataset_name", 
+        #choices=DATA_SET,
+        type=ds
+        )
     parser.add_argument("--train_batch_size", type=int, help="Training batch size")
     parser.add_argument("--val_batch_size", type=int, help="Validation batch size")
     parser.add_argument("--train_pct", type=int, default=100, help="training data fraction")

@@ -25,27 +25,15 @@ def make_mlp(l, act=nn.LeakyReLU(), tail=[]):
         [[nn.Linear(i, o)] + ([act] if n < len(l)-2 else [])
          for n, (i, o) in enumerate(zip(l, l[1:]))], []) + tail))
 
-class MLP4Regression(nn.Module):
+class MLP(nn.Module):
     def __init__(self, l, act=nn.LeakyReLU(), tail=[], dropout=0.0):
-        super(MLP4Regression, self).__init__()
+        super(MLP, self).__init__()
         self.net = make_mlp(l, act, tail = tail + [nn.Dropout(dropout)])
     def forward(self, x):
         """
         x: (bs, _)
         """
         return self.net(x) # (bs, _)
-
-class MLP4Classif(nn.Module):
-    def __init__(self, l, act=nn.LeakyReLU(), tail=[], dropout=0.0):
-        super(MLP4Classif, self).__init__()
-        self.net = make_mlp(l, act, tail = tail + [nn.Dropout(dropout)])
-    def forward(self, x):
-        """
-        x: (bs, _)
-        """
-        x = self.net(x) # (bs, n_class)
-        return F.softmax(x, dim=-1)
-        return F.log_softmax(x, dim=-1)
 
 # Text
 def Embedding(num_embeddings, embedding_dim, padding_idx=None):
@@ -55,23 +43,47 @@ def Embedding(num_embeddings, embedding_dim, padding_idx=None):
         nn.init.constant_(m.weight[padding_idx], 0)
     return m
 
+class TextModel(nn.Module):
+    def __init__(self, p, operator, hidden_dim, n_class, dropout=0.0, E_factor = 1.0, pad_index=None):
+        super(TextModel, self).__init__()
+        self.embeddings = Embedding(p, hidden_dim[0], padding_idx=pad_index)
+        self.embeddings_dropout = nn.Dropout(dropout)
+        self.mlp = make_mlp(hidden_dim + [n_class])
+        self.mlp_dropout = nn.Dropout(dropout)
+        self.operator = operator 
+        self.E_factor = E_factor
+
+    def forward(self, x):
+        """
+        Inputs: `x`, LongTensor(bs, 2), containing word indices
+        """
+        a, b = x[...,0], x[...,1] # (bs,)
+        #a, b = a.unsqueeze(1), b.unsqueeze(1) # (bs, 1)
+        E_a = self.embeddings_dropout(self.embeddings(a)) # (bs, emb_dim)
+        E_b = self.embeddings_dropout(self.embeddings(b)) # (bs, emb_dim)
+        E = (E_a + E_b) #if self.operator == "+" else E_a*E_b
+        E = E / self.E_factor
+        tensor = self.mlp_dropout(self.mlp(E)).squeeze() # (bs,) if regression, (bs, 2*(p - 1)+1) if classification
+        return tensor
+
 # Images
+
+def get_out_dim_conv(h_in, w_in, kernel_size, stride, padding, dilation):
+    h_out = math.floor((h_in + 2 * padding - dilation*(kernel_size - 1) - 1) / stride + 1)
+    w_out = math.floor((w_in + 2 * padding - dilation*(kernel_size - 1) - 1) / stride + 1)
+    return h_out, w_out
+
 class CNNNet(nn.Module):
-    def __init__(self, c_in, h_in, w_in, c_out : List, kernel_size, hidden_dim : List, n_class, kernel_size_maxPool=2, dropout=0.0):
+    def __init__(self, c_in, h_in, w_in, c_out : List, kernel_size, hidden_dim : List, 
+    n_class, kernel_size_maxPool=2, dropout=0.0,
+    stride=1, padding=0, dilation=1
+    ):
         super(CNNNet, self).__init__()
 
         assert len(c_out) >= 1
         assert len(hidden_dim) >= 1
 
-        stride=1
-        padding=0
-        dilation=1
         stride_maxPool=kernel_size_maxPool
-
-        def get_out_dim_conv(h_in, w_in, kernel_size, stride, padding, dilation):
-            h_out = math.floor((h_in + 2 * padding - dilation*(kernel_size - 1) - 1) / stride + 1)
-            w_out = math.floor((w_in + 2 * padding - dilation*(kernel_size - 1) - 1) / stride + 1)
-            return h_out, w_out
 
         self.conv = []
         self.conv.append(
@@ -84,7 +96,7 @@ class CNNNet(nn.Module):
                 dilation=dilation
             )   
         )
-        h_out, w_out = get_out_dim_conv(h_in, w_in, kernel_size, stride, padding, dilation, )
+        h_out, w_out = get_out_dim_conv(h_in, w_in, kernel_size, stride, padding, dilation)
         self.conv.append(
             nn.MaxPool2d(kernel_size_maxPool, stride_maxPool, padding, dilation) 
         )
@@ -126,7 +138,179 @@ class CNNNet(nn.Module):
         x = self.conv(x) # (bs, c_out, h_out, w_out)
         x = x.view(-1, self.fc_input_dim) # (bs, c_out*h_out*w_out)
         x = self.fc(x) # (bs, n_class)
-        return F.log_softmax(x, dim=-1)
+        return x
+        #return F.softmax(x, dim=-1)
+        #return F.log_softmax(x, dim=-1)
+
+class ResNet(nn.Module):
+    def __init__(self, c_in, h_in, w_in, 
+                 hidden_dim : List, 
+                 n_class, 
+                 c_out : List = [64,128,128,256,512,512],
+                 kernel_size = 3, 
+                 kernel_size_maxPool=2, 
+                 stride=1,
+                 padding=1,
+                 padding_maxPool=0,
+                 dilation=1,
+                 dropout=0.0,
+                 ):
+        super(ResNet, self).__init__()
+        
+        assert len(c_out) == 6
+        assert len(hidden_dim) >= 1
+        
+        stride_maxPool=kernel_size_maxPool
+
+        i = 0
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=c_in, 
+                out_channels=c_out[i],
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation
+            ),
+            nn.BatchNorm2d(c_out[i]),
+            nn.ReLU(inplace=True)
+        )
+        h_out, w_out = get_out_dim_conv(h_in, w_in, kernel_size, stride, padding, dilation)
+
+        i+=1
+        self.conv2 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=c_out[i-1], 
+                out_channels=c_out[i],
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation
+            ),
+            nn.BatchNorm2d(c_out[i]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)
+        )
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)
+
+        i+=1
+        self.res1 = nn.Sequential(
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels=c_out[i-1], 
+                    out_channels=c_out[i],
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    dilation=dilation
+                ),
+                nn.BatchNorm2d(c_out[i]),
+                nn.ReLU(inplace=True)
+            ), 
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels=c_out[i-1], 
+                    out_channels=c_out[i],
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    dilation=dilation
+                ),
+                nn.BatchNorm2d(c_out[i]),
+                nn.ReLU(inplace=True))
+        )
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+        
+        i+=1
+        self.conv3 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=c_out[i-1], 
+                out_channels=c_out[i],
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation
+            ),
+            nn.BatchNorm2d(c_out[i]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)
+        )
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)
+
+        i+=1
+        self.conv4 = nn.Sequential(
+            nn.Conv2d(
+                in_channels=c_out[i-1], 
+                out_channels=c_out[i],
+                kernel_size=kernel_size,
+                stride=stride,
+                padding=padding,
+                dilation=dilation
+            ),
+            nn.BatchNorm2d(c_out[i]),
+            nn.ReLU(inplace=True),
+            nn.MaxPool2d(kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)
+        )
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)
+
+        i+=1
+        self.res2 = nn.Sequential(
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels=c_out[i-1], 
+                    out_channels=c_out[i],
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    dilation=dilation
+                ),
+                nn.BatchNorm2d(c_out[i]),
+                nn.ReLU(inplace=True)
+            ), 
+            nn.Sequential(
+                nn.Conv2d(
+                    in_channels=c_out[i-1], 
+                    out_channels=c_out[i],
+                    kernel_size=kernel_size,
+                    stride=stride,
+                    padding=padding,
+                    dilation=dilation
+                ),
+                nn.BatchNorm2d(c_out[i]),
+                nn.ReLU(inplace=True))
+        )
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size, stride, padding, dilation)
+
+        kernel_size_maxPool=4
+        self.classifier = [nn.MaxPool2d(kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)]
+        h_out, w_out = get_out_dim_conv(h_out, w_out, kernel_size_maxPool, stride_maxPool, padding_maxPool, dilation)
+        
+
+        self.classifier.append(nn.Flatten())
+        hidden_dim = hidden_dim + [n_class]
+        self.classifier.append(nn.Linear(c_out[-1]*h_out*w_out, hidden_dim[0]))
+
+        for i in range(1, len(hidden_dim)) :
+            self.classifier.append(nn.Dropout(p=dropout))
+            self.classifier.append(nn.Linear(hidden_dim[i-1], hidden_dim[i]))
+        self.classifier.append(nn.Dropout(p=dropout))
+        
+        self.classifier = nn.Sequential(*self.classifier)
+        
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.conv2(x)
+        x = self.res1(x) + x
+        x = self.conv3(x)
+        x = self.conv4(x)
+        x = self.res2(x) + x
+        x = self.classifier(x)        
+        return x
 
 class Model(pl.LightningModule):
     """
@@ -141,35 +325,63 @@ class Model(pl.LightningModule):
         Transformer model 
         """
         super().__init__()
+
         # Important: This property activates manual optimization.
-        self.automatic_optimization = False
+        self.automatic_optimization = "sag" not in params.optimizer
+        
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters(params) 
         # model and loss
         regression = self.hparams.data_infos["task"] == "regression"
         if self.hparams.dataset_name in TORCH_SET :
-            self.backbone = CNNNet(
-                self.hparams.data_infos["c_in"], 
-                self.hparams.data_infos["h_in"], 
-                self.hparams.data_infos["w_in"], 
-                self.hparams.c_out, 
-                self.hparams.kernel_size, 
-                self.hparams.hidden_dim, 
-                self.hparams.data_infos["n_class"], 
-                self.hparams.kernel_size_maxPool, 
-                self.hparams.dropout
-            )
-        if self.hparams.dataset_name in SKLEAN_SET :
-            _class = MLP4Regression if regression else MLP4Classif
-            self.backbone = _class(
+            if not self.hparams.use_resnet :
+                self.backbone = CNNNet(
+                    self.hparams.data_infos["c_in"], 
+                    self.hparams.data_infos["h_in"], 
+                    self.hparams.data_infos["w_in"], 
+                    self.hparams.c_out, 
+                    self.hparams.kernel_size, 
+                    self.hparams.hidden_dim, 
+                    self.hparams.data_infos["n_class"], 
+                    self.hparams.kernel_size_maxPool, 
+                    self.hparams.dropout
+                )
+            else :
+                self.backbone = ResNet(
+                    self.hparams.data_infos["c_in"], 
+                    self.hparams.data_infos["h_in"], 
+                    self.hparams.data_infos["w_in"],
+                    hidden_dim = self.hparams.hidden_dim, 
+                    n_class = self.hparams.data_infos["n_class"], 
+                    c_out = [64,128,128,256,512,512],
+                    kernel_size=3, 
+                    kernel_size_maxPool=2, 
+                    stride=1,
+                    padding=1,
+                    padding_maxPool=0,
+                    dilation=1,
+                    dropout=self.hparams.dropout
+                )
+        elif self.hparams.dataset_name in SKLEAN_SET :
+            self.backbone = MLP(
                 l = [self.hparams.data_infos["c_in"]] +  self.hparams.hidden_dim + [self.hparams.data_infos["n_class"]],
                 act=nn.LeakyReLU(), 
                 tail=[],
                 dropout = self.hparams.dropout
             )
+        elif "arithmetic" in self.hparams.dataset_name :
+            self.backbone = TextModel(
+                self.hparams.data_infos["p"], 
+                self.hparams.data_infos["operator"], 
+                self.hparams.hidden_dim, 
+                self.hparams.data_infos["n_class"], 
+                dropout=self.hparams.dropout, 
+                E_factor = 1.0
+            )
             
         if not regression :
-            self.criterion = torch.nn.NLLLoss() if self.hparams.dataset_name in TORCH_SET else nn.CrossEntropyLoss() 
+            #self.criterion = torch.nn.NLLLoss() if self.hparams.dataset_name in TORCH_SET else nn.CrossEntropyLoss()
+            self.criterion = nn.CrossEntropyLoss() 
         else : 
             self.criterion = nn.MSELoss()
 
@@ -428,6 +640,7 @@ class Model(pl.LightningModule):
     def on_train_start(self):
         db_data = getattr(self.hparams, "data_infos", None)
         db_data = {k : v for k, v in db_data.items() if k != "classes" and (v is not None) and type(v) != str}
+        db_data = {k : v for k, v in db_data.items() if type(v) != bool}
         if db_data is not None : self.send_dict_to_wandb(db_data, label = "data_info", title="Dataset Informations")
 
     def on_train_end(self) :
