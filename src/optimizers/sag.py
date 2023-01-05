@@ -6,7 +6,6 @@ class SimpleSAG(torch.optim.Optimizer):
     """
     def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0):
         if not 0.0 <= lr: raise ValueError("Invalid learning rate: {}".format(lr))
-        #defaults = dict(lr=lr, n=n, m=m, batch_mode=batch_mode, init_y_i=init_y_i, weight_decay=weight_decay)
         defaults = dict(lr=lr, weight_decay=weight_decay)
         super().__init__(params, defaults)
         self.batch_mode = batch_mode
@@ -52,15 +51,16 @@ class SAGBase(torch.optim.Optimizer):
     """
     Stochastic Average Gradient (SAG) : vanilla implementation
     """
-    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0, defaults = {}):
+    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0, sum_all = True, defaults = {}):
         if not 0.0 <= lr : raise ValueError("Invalid learning rate: {}".format(lr))
-        def_tmp = dict(lr=lr, n=n, m=m, batch_mode=batch_mode, init_y_i=init_y_i, weight_decay=weight_decay)
+        def_tmp = dict(lr=lr, weight_decay=weight_decay)
         defaults = {**def_tmp, **defaults}
         super().__init__(params, defaults)
         self.batch_mode = batch_mode
         self.n = int(n)
         self.m = int(m)
         self.init_y_i = init_y_i
+        self.sum_all = sum_all
         
         n = self.m if batch_mode else self.n
         for group in self.param_groups:
@@ -147,6 +147,7 @@ class SAGBase(torch.optim.Optimizer):
                 grad = p.grad.data
                 if grad.is_sparse: pass # TODO : sparse SAG
                 state = self.state[p]
+                
                 i = batch_idx if self.batch_mode else indexes
                 state['m'][i] = 1.0
                 state['grad'][i] = grad + 0.0
@@ -155,13 +156,11 @@ class SAGBase(torch.optim.Optimizer):
                     p.data.add_(-group['weight_decay'] * group['lr'], p.data)
 
                 #m = self.m
-                m = state['m'].sum()
-                #m = state['m'][i].sum()
+                m = state['m'].sum() if self.sum_all else state['m'][i].sum()
                 p.data.add_(-group['lr'], state['grad'].sum(dim=0) / m)
 
                 # print("=========")
-                # print(state['grad'].shape, mean_y_i.shape)
-                # print(state['grad'].sum(), mean_y_i.sum())
+                # print(state['grad'].shape, state['grad'].sum())
 
         return loss
 
@@ -169,19 +168,12 @@ class SAGWithd(SAGBase):
     """
     Stochastic Average Gradient (SAG) : vanilla implementation
     """
-    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0, defaults = {}):
-
-        super().__init__(params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0, defaults = defaults)
-        
-        n = int(m) if batch_mode else int(n)
+    def __init__(self, params, n, m, batch_mode, init_y_i, lr=1e-3, weight_decay=0, sum_all = True, defaults = {}):
+        super().__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, sum_all, defaults = defaults)
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
                 state['d'] = torch.zeros_like(p.data, device = p.data.device)
-
-    def __setstate__(self, state):
-        super().__setstate__(state)
-
     
     def step(self, batch_idx, indexes, closure=None):
         """Performs a single optimization step.
@@ -204,13 +196,9 @@ class SAGWithd(SAGBase):
                 
                 i = batch_idx if self.batch_mode else indexes
                 state['m'][i] = 1.0
-                m = state['m'][i].sum()
-                #m = state['m'].sum()
-                if self.batch_mode :
-                    y_i = state['grad'][i] / m
-                else :
-                    y_i = state['grad'][i].sum(dim=0) / m
-
+                m = state['m'].sum() if self.sum_all else state['m'][i].sum()
+                if self.batch_mode : y_i = state['grad'][i] / m
+                else : y_i = state['grad'][i].sum(dim=0) / m
                 state['d'].sub_(y_i, alpha=1.0).add_(grad, alpha=1.0) 
                 state['grad'][i] = grad + 0.0
 
@@ -218,5 +206,8 @@ class SAGWithd(SAGBase):
                     p.data.add_(-group['weight_decay'] * group['lr'], p.data)
 
                 p.data.add_(-group['lr'], state['d'])
+
+                # print("=========")
+                # print(state['grad'].shape, state['grad'].sum())
 
         return loss

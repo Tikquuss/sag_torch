@@ -44,10 +44,19 @@ early_stopping_grokking=$none
 #early_stopping_grokking="patience=int(1000),metric=str(${val_metric}),metric_threshold=float(90.0)"
 
 save_top_k=-1
-#save_top_k=2
-every_n_epochs=100
+save_top_k=2
+#every_n_epochs=100
 
+# sgd
 momentum=0.9
+# adam
+beta1=0.9
+beta2=0.99
+# sag
+with_d=True
+batch_mode=False
+init_y_i=False
+
 if [[ $opt == "sgd" ]]; then
 	opttmptmp="${opt},momentum=0,dampening=0,weight_decay=${weight_decay},nesterov=False"
 elif [[ $opt == "momentum" ]]; then
@@ -59,7 +68,7 @@ elif [[ $opt == "asgd" ]]; then
 elif [[ $opt == "rmsprop" ]]; then
 	opttmptmp="${opt},alpha=0.99,weight_decay=${weight_decay},momentum=0,centered=False"
 elif [[ $opt == "rmsprop_mom" ]]; then
-	opttmptmp="rmsprop,alpha=0.99,weight_decay=${weight_decay},momentum=0.9,centered=False"
+	opttmptmp="rmsprop,alpha=0.99,weight_decay=${weight_decay},momentum=${momentum},centered=False"
 elif [[ $opt == "rprop" ]]; then
 	opttmptmp="${opt},etaplus=0.5,etaminus=1.2,step_min=1e-06,step_max=50"
 elif [[ $opt == "adadelta" ]]; then
@@ -67,29 +76,53 @@ elif [[ $opt == "adadelta" ]]; then
 elif [[ $opt == "adagrad" ]]; then
 	opttmptmp="${opt},lr_decay=0,weight_decay=${weight_decay},initial_accumulator_value=0"
 elif [[ $opt == "adam" ]]; then
-	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,amsgrad=False"
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=${beta1},beta2=${beta2},amsgrad=False"
 elif [[ $opt == "amsgrad" ]]; then
-	opttmptmp="adam,weight_decay=${weight_decay},beta1=0.9,beta2=0.99,amsgrad=True"
+	opttmptmp="adam,weight_decay=${weight_decay},beta1=${beta1},beta2=${beta2},amsgrad=True"
 elif [[ $opt == "adamax" ]]; then
-	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99"
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=${beta1},beta2=${beta2}"
 elif [[ $opt == "custom_adam" ]]; then
-	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99"
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=${beta1},beta2=${beta2}"
 elif [[ $opt == "adam_inverse_sqrt" ]]; then
-	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,warmup_updates=4000,warmup_init_lr=1e-7,exp_factor=0.5"
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=${beta1},beta2=${beta2},warmup_updates=4000,warmup_init_lr=1e-7,exp_factor=0.5"
 elif [[ $opt == "adam_cosine" ]]; then
-	opttmptmp="${opt},weight_decay=${weight_decay},beta1=0.9,beta2=0.99,warmup_updates=4000,warmup_init_lr=1e-7,min_lr=1e-9,init_period=1000000,period_mult=1,lr_shrink=0.75"
+	opttmptmp="${opt},weight_decay=${weight_decay},beta1=${beta1},beta2=${beta2},warmup_updates=4000,warmup_init_lr=1e-7,min_lr=1e-9"
+	opttmptmp="${opttmptmp},init_period=1000000,period_mult=1,lr_shrink=0.75"
 elif [[ $opt == "sag" ]]; then
-	opttmptmp="${opt},weight_decay=${weight_decay},batch_mode=False,init_y_i=False"
+	opttmptmp="${opt},weight_decay=${weight_decay},batch_mode=${batch_mode},init_y_i=${init_y_i},with_d=${with_d}"
+elif [[ $opt == "sag_sgd" ]]; then
+	opttmptmp="${opt},weight_decay=${weight_decay},batch_mode=${batch_mode},init_y_i=${init_y_i},with_d=${with_d}"
+	opttmptmp="${opttmptmp},momentum=${momentum},dampening=0.9,weight_decay=${weight_decay},nesterov=False"
+elif [[ $opt == "sag_adam" ]]; then
+	opttmptmp="${opt},weight_decay=${weight_decay},batch_mode=${batch_mode},init_y_i=${init_y_i},with_d=${with_d}"
+	opttmptmp="${opttmptmp},beta1=${beta1},beta2=${beta2}"
 else 
 	echo "Error $opt"
 	exit
 fi
 
+c_out="10,10"
+hidden_dim="50"
+if [ $dataset_name == "mnist" ] || [ $dataset_name == "fashion_mnist" ]; then
+	c_out="10,10"
+	hidden_dim="50"
+elif [ $dataset_name == "cifar10" ]; then
+	c_out="64,128"
+	hidden_dim="250"
+elif [[ $dataset_name == "iris" ]]; then
+	hidden_dim="40,20"
+elif [[ "$dataset_name" == *"arithmetic"* ]]; then
+	hidden_dim="100,50,20"
+# else 
+# 	echo "Error $dataset_name"
+# 	exit
+fi
+
 python train.py \
 	--exp_id $exp_id \
 	--log_dir "${log_dir}" \
-	--c_out 10,10 \
-	--hidden_dim 50 \
+	--c_out $c_out \
+	--hidden_dim $hidden_dim \
 	--kernel_size 5 \
 	--kernel_size_maxPool 2 \
 	--dropout $dropout \

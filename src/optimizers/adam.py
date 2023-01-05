@@ -97,12 +97,12 @@ class CustomAdam(optim.Optimizer):
 class SAGAdamSimpleBase(SAGBase):
     def __init__(self, params, 
         n, m, batch_mode, init_y_i,
-        lr=1e-3, weight_decay=0,
+        lr=1e-3, weight_decay=0, sum_all = True,
         betas=(0.9, 0.999), eps=1e-8
     ):        
         CustomAdam.check_params(lr, eps, betas)
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super(SAGAdamSimpleBase, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, defaults=defaults)
+        super(SAGAdamSimpleBase, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, sum_all, defaults=defaults)
 
         n = self.m if batch_mode else self.n
         for group in self.param_groups:
@@ -143,8 +143,6 @@ class SAGAdamSimpleBase(SAGBase):
                 exp_avg.mul_(beta1).add_(grad, alpha=1-beta1) 
                 exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1-beta2) 
                 
-                denom = exp_avg_sq.sqrt()#.add_(group['eps'])
-
                 bias_correction1 = 1 - beta1 ** state['step']  # .item()
                 bias_correction2 = 1 - beta2 ** state['step']  # .item()
                 step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
@@ -153,15 +151,14 @@ class SAGAdamSimpleBase(SAGBase):
                 i = batch_idx if self.batch_mode else indexes
                 state['m'][i] = 1.0
                 state['grad'][i] = exp_avg + 0.0
-                state['grad_sq'][i] = denom + 0.0
+                state['grad_sq'][i] = exp_avg_sq + 0.0
         
                 if group['weight_decay'] != 0:
                     p.data.add_(-group['weight_decay'] * group['lr'], p.data)
 
-                m = state['m'][i].sum()
-                #m = state['m'].sum()
+                m = state['m'].sum() if self.sum_all else state['m'][i].sum()
                 v = state['grad'].sum(dim=0) / m
-                r = (state['grad_sq'].sum(dim=0) / m.sqrt()).add_(group['eps'])
+                r = (state['grad_sq'].sum(dim=0) / m).sqrt().add_(group['eps'])
                 p.data.addcdiv_(-step_size, v, r)
 
         return loss
@@ -169,12 +166,12 @@ class SAGAdamSimpleBase(SAGBase):
 class SAGAdamBase(SAGBase):
     def __init__(self, params, 
         n, m, batch_mode, init_y_i,
-        lr=1e-3, weight_decay=0,
+        lr=1e-3, weight_decay=0, sum_all = True,
         betas=(0.9, 0.999), eps=1e-8
     ):        
         CustomAdam.check_params(lr, eps, betas)
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super(SAGAdamBase, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, defaults=defaults)
+        super(SAGAdamBase, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, sum_all, defaults=defaults)
 
         self.debug = False
         n = self.m if batch_mode else self.n
@@ -216,8 +213,7 @@ class SAGAdamBase(SAGBase):
                 state['grad'][i].mul_(beta1).add_(grad, alpha=1-beta1) 
                 state['grad_sq'][i].mul_(beta2).addcmul_(grad, grad, value=1-beta2) 
 
-                m = state['m'][i].sum()
-                #m = state['m'].sum()
+                m = state['m'].sum() if self.sum_all else state['m'][i].sum()
                 exp_avg = state['grad'].sum(dim=0) / m
                 denom = (state['grad_sq'].sum(dim=0) / m).sqrt().add_(group['eps'])
                             
@@ -228,21 +224,19 @@ class SAGAdamBase(SAGBase):
                 if group['weight_decay'] != 0:
                     p.data.add_(-group['weight_decay'] * group['lr'], p.data)
 
-                if not self.debug :
-                    p.data.addcdiv_(-step_size, exp_avg, denom)
-                else :
+                if self.debug :
                     exp_avg, exp_avg_sq = state['exp_avg'], state['exp_avg_sq']
                     exp_avg.mul_(beta1).add_(grad, alpha=1-beta1) 
                     exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1-beta2) 
                     denom = exp_avg_sq.sqrt().add_(group['eps'])
 
-                    p.data.addcdiv_(-step_size, exp_avg, denom)
+                p.data.addcdiv_(-step_size, exp_avg, denom)
                     
-                    # print("=========")
-                    # print(state['grad_sq'].shape, state['grad_sq'][i].shape)
-                    # print(state['grad'].sum(), state['grad_sq'].sum())
-                    # print(exp_avg.sum(), mean_y_i.sum())
-                    # print(denom.sum(), mean_y_i_sq.sum())
+                # print("=========")
+                # print(state['grad_sq'].shape, state['grad_sq'][i].shape)
+                # print(state['grad'].sum(), state['grad_sq'].sum())
+                # print(exp_avg.sum())
+                # print(denom.sum())
                     
 
         return loss
@@ -250,12 +244,12 @@ class SAGAdamBase(SAGBase):
 class SAGAdamSimpleWithd(SAGWithd):
     def __init__(self, params, 
         n, m, batch_mode, init_y_i,
-        lr=1e-3, weight_decay=0,
+        lr=1e-3, weight_decay=0, sum_all = True,
         betas=(0.9, 0.999), eps=1e-8
     ):        
         CustomAdam.check_params(lr, eps, betas)
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super(SAGAdamSimpleWithd, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, defaults=defaults)
+        super(SAGAdamSimpleWithd, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, sum_all, defaults=defaults)
 
         n = self.m if batch_mode else self.n
         for group in self.param_groups:
@@ -297,8 +291,6 @@ class SAGAdamSimpleWithd(SAGWithd):
                 exp_avg.mul_(beta1).add_(grad, alpha=1-beta1) 
                 exp_avg_sq.mul_(beta2).addcmul_(grad, grad, value=1-beta2) 
                 
-                denom = exp_avg_sq.sqrt().add_(group['eps'])
-
                 bias_correction1 = 1 - beta1 ** state['step']  # .item()
                 bias_correction2 = 1 - beta2 ** state['step']  # .item()
                 step_size = group['lr'] * math.sqrt(bias_correction2) / bias_correction1
@@ -306,9 +298,7 @@ class SAGAdamSimpleWithd(SAGWithd):
                 ## SAG
                 i = batch_idx if self.batch_mode else indexes
                 state['m'][i] = 1.0
-
-                m = state['m'][i].sum()
-                #m = state['m'].sum()
+                m = state['m'].sum() if self.sum_all else state['m'][i].sum()
                 if self.batch_mode :
                     y_i = state['grad'][i] / m
                     y_i_sq = state['grad_sq'][i] / m
@@ -317,31 +307,37 @@ class SAGAdamSimpleWithd(SAGWithd):
                     y_i_sq = state['grad_sq'][i].sum(dim=0) / m
 
                 state['d'].sub_(y_i, alpha=1.0).add_(exp_avg, alpha=1.0) 
-                state['d_sq'].sub_(y_i_sq , alpha=1.0).add_(denom, alpha=1.0) 
+                # store the square root to avoid a square root of negative number with denom
+                state['d_sq'].sub_(y_i_sq.sqrt(), alpha=1.0).add_(exp_avg_sq.sqrt(), alpha=1.0) 
                 
                 state['grad'][i] = exp_avg + 0.0
-                state['grad_sq'][i] = denom + 0.0
+                state['grad_sq'][i] = exp_avg_sq + 0.0
 
                 exp_avg = state['d']
-                denom = state['d_sq'].sqrt().add_(group['eps'])
+                denom = state['d_sq'].add_(group['eps'])
 
                 if group['weight_decay'] != 0:
                     p.data.add_(-group['weight_decay'] * group['lr'], p.data)
 
-                # TODO : https://github.com/pytorch/pytorch/issues/32861
                 p.data.addcdiv_(-step_size, exp_avg, denom)
+
+                # print("=========")
+                # print(state['grad_sq'].shape, state['grad_sq'][i].shape)
+                # print(state['grad'].sum(), state['grad_sq'].sum())
+                # print(exp_avg.sum())
+                # print(denom.sum())
 
         return loss
 
 class SAGAdamWithd(SAGWithd):
     def __init__(self, params, 
         n, m, batch_mode, init_y_i,
-        lr=1e-3, weight_decay=0,
+        lr=1e-3, weight_decay=0, sum_all = True,
         betas=(0.9, 0.999), eps=1e-8
     ):        
         CustomAdam.check_params(lr, eps, betas)
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super(SAGAdamWithd, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, defaults=defaults)
+        super(SAGAdamWithd, self).__init__(params, n, m, batch_mode, init_y_i, lr, weight_decay, sum_all, defaults=defaults)
 
         self.debug = False
         n = self.m if batch_mode else self.n
@@ -380,8 +376,8 @@ class SAGAdamWithd(SAGWithd):
 
                 i = batch_idx if self.batch_mode else indexes
                 state['m'][i] = 1.0
-                m = state['m'][i].sum()
-                #m = state['m'].sum()
+                m = state['m'].sum() if self.sum_all else state['m'][i].sum()
+
                 if self.batch_mode :
                     y_i = state['grad'][i] / m
                     y_i_sq = state['grad_sq'][i] / m
@@ -389,17 +385,25 @@ class SAGAdamWithd(SAGWithd):
                     y_i = state['grad'][i].sum(dim=0) / m
                     y_i_sq = state['grad_sq'][i].sum(dim=0) / m
 
-                buf    = beta1 * y_i    + (1-beta1) * grad
-                buf_sq = beta2 * y_i_sq + (1-beta2) * grad * grad
+                buf    = beta1 * state['grad'][i]    + (1-beta1) * grad
+                buf_sq = beta2 * state['grad_sq'][i] + (1-beta2) * grad * grad
 
-                state['d'].sub_(y_i, alpha=1.0).add_(buf, alpha=1.0)
-                state['d_sq'].sub_(y_i_sq, alpha=1.0).add_(buf_sq, alpha=1.0)
+                if self.batch_mode :
+                    y_i_add = buf[i] / m
+                    y_i_sq_add = buf_sq[i] / m
+                else :
+                    y_i_add = buf[i].sum(dim=0) / m
+                    y_i_sq_add = buf_sq[i].sum(dim=0) / m
+
+                state['d'].sub_(y_i, alpha=1.0).add_(y_i_add, alpha=1.0)
+                # store the square root to avoid a square root of negative number with denom
+                state['d_sq'].sub_(y_i_sq.sqrt(), alpha=1.0).add_(y_i_sq_add.sqrt(), alpha=1.0)
 
                 state['grad'][i] = buf
                 state['grad_sq'][i] = buf_sq
 
                 exp_avg = state['d']
-                denom = state['d_sq'].sqrt().add_(group['eps'])
+                denom = state['d_sq'].add_(group['eps'])
 
                 #    
                 bias_correction1 = 1 - beta1 ** state['step']  # .item()
@@ -418,10 +422,10 @@ class SAGAdamWithd(SAGWithd):
                 p.data.addcdiv_(-step_size, exp_avg, denom)
                     
                 # print("=========")
-                # #print(state['grad_sq'].shape, state['grad_sq'][i].shape)
-                # #print(state['grad'].sum(), state['grad_sq'].sum())
-                # print(exp_avg.sum())#, mean_y_i.sum())
-                # print(denom.sum())#, mean_y_i_sq.sum())
+                # print(state['grad_sq'].shape, state['grad_sq'][i].shape)
+                # print(state['grad'].sum(), state['grad_sq'].sum())
+                # print(exp_avg.sum(), y_i.sum())
+                # print(denom.sum()), y_i_sq.sum()
                     
         return loss
 

@@ -3,8 +3,8 @@ import re
 import inspect
 from torch import optim
 
-from .optimizers.sgd import CustomSGD, SAGSGD
 from .optimizers.sag import SimpleSAG, SAGBase, SAGWithd
+from .optimizers.sgd import CustomSGD, SAGSGDBase, SAGSGDWithd
 from .optimizers.adam import CustomAdam, \
     SAGAdamSimpleBase, SAGAdamBase, \
     SAGAdamSimpleWithd, SAGAdamWithd, \
@@ -153,18 +153,26 @@ def get_optimizer(parameters, s, noamopt=""):
             assert 'init_y_i' in optim_params
             optim_params["batch_mode"] = bool_flag(optim_params["batch_mode"])
             optim_params["init_y_i"] = bool_flag(optim_params["init_y_i"])
+            optim_params["sum_all"] = bool_flag(optim_params.get("sum_all", 'False'))
+            with_d = bool_flag(optim_params.pop("with_d", 'True'))
             if method == 'sag' : 
-                #optim_fn = SAGBase
-                optim_fn = SAGWithd
+                # good without decay
+                # SAGWithd is slightly better than SAGBase
+                optim_fn = SAGWithd if with_d else SAGBase 
             elif method == 'sag_sgd' :
                 optim_params["nesterov"] = bool_flag(optim_params.get("nesterov", 'False'))
-                optim_fn = SAGSGD
+                # good without decay
+                # SAGSGDWithd is slightly better than SAGSGDBase
+                optim_fn =  SAGSGDWithd if with_d else SAGSGDBase
             elif method == 'sag_adam' :
                 optim_params['betas'] = (optim_params.pop('beta1', 0.9), optim_params.pop('beta2', 0.999))
-                optim_fn = SAGAdamSimpleBase
-                optim_fn = SAGAdamBase
-                optim_fn = SAGAdamSimpleWithd
-                optim_fn = SAGAdamWithd
+                #optim_params['weight_decay'] = 1.0 
+                if with_d :
+                    optim_fn = SAGAdamSimpleWithd # good, but unstable
+                    #optim_fn = SAGAdamWithd # good, but unstable
+                else :
+                    optim_fn = SAGAdamSimpleBase # good
+                    #optim_fn = SAGAdamBase # bad
     else:
         raise Exception('Unknown optimization method: "%s"' % method)
 

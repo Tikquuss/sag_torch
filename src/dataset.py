@@ -153,8 +153,9 @@ class LMLightningDataModule(pl.LightningDataModule):
                 torchvision.transforms.Normalize(mean=mean, std=std),
                 # https://medium.com/mlearning-ai/cifar10-image-classification-in-pytorch-e5185176fbef
                 #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
-                torchvision.transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
-                torchvision.transforms.RandomHorizontalFlip(p=0.5)])
+                #torchvision.transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                #torchvision.transforms.RandomHorizontalFlip(p=0.5)
+                ])
             transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(mean=mean, std=std)])
