@@ -1,4 +1,3 @@
-
 #!/bin/bash
 
 none="_None_"
@@ -48,12 +47,13 @@ save_top_k=-1
 #save_top_k=2
 every_n_epochs=100
 
+momentum=0.9
 if [[ $opt == "sgd" ]]; then
 	opttmptmp="${opt},momentum=0,dampening=0,weight_decay=${weight_decay},nesterov=False"
 elif [[ $opt == "momentum" ]]; then
-	opttmptmp="sgd,momentum=0.9,dampening=0,weight_decay=${weight_decay},nesterov=True"
+	opttmptmp="sgd,momentum=${momentum},dampening=0.9,weight_decay=${weight_decay},nesterov=False"
 elif [[ $opt == "nesterov" ]]; then
-	opttmptmp="sgd,momentum=0,dampening=0,weight_decay=${weight_decay},nesterov=True"
+	opttmptmp="sgd,momentum=${momentum},dampening=0,weight_decay=${weight_decay},nesterov=True"
 elif [[ $opt == "asgd" ]]; then
 	opttmptmp="${opt},lambd=0.0001,alpha=0.75,t0=1000000.0,weight_decay=${weight_decay}"
 elif [[ $opt == "rmsprop" ]]; then
