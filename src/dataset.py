@@ -172,8 +172,9 @@ class LMLightningDataModule(pl.LightningDataModule):
                 torchvision.transforms.Normalize(mean=mean, std=std),
                 # https://medium.com/mlearning-ai/cifar10-image-classification-in-pytorch-e5185176fbef
                 #torchvision.transforms.RandomResizedCrop(224), # h_in = w_in = 224
-                torchvision.transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
-                torchvision.transforms.RandomHorizontalFlip(p=0.5)])
+                #torchvision.transforms.RandomCrop(32, padding=4, padding_mode='reflect'),
+                #torchvision.transforms.RandomHorizontalFlip(p=0.5)
+                ])
             transform = torchvision.transforms.Compose([
                 torchvision.transforms.ToTensor(),
                 torchvision.transforms.Normalize(mean=mean, std=std)])
@@ -265,7 +266,7 @@ class LMLightningDataModule(pl.LightningDataModule):
                 num_workers=self.num_workers
             )
 
-        cond = (self.dataset_name not in SKLEAN_SET) or ("arithmetic" not in self.dataset_name) 
+        cond = (self.dataset_name not in SKLEAN_SET) and ("arithmetic" not in self.dataset_name) 
         if cond and (0 < self.train_pct < 100) :
             self.train_dataset = cut_dataset(self.train_dataset, pct=self.train_pct)
         if 0 < self.val_pct < 100 :
@@ -282,7 +283,7 @@ class LMLightningDataModule(pl.LightningDataModule):
             "c_in" : c_in, "h_in" : h_in, "w_in" : w_in, "n_class" : n_class,
             "classes" : classes, "task" : task,
             "train_batch_size" : self.train_batch_size, "val_batch_size" : self.val_batch_size, 
-            "train_size":train_size, "val_size":val_size, 
+            "train_size":train_size, "val_size":val_size, "size" : train_size + val_size,
             "train_n_batchs":len(self.train_dataloader()), "val_n_batchs":len(self.val_dataloader())
         }
         for k, v in tmp.items() : self.data_infos[k] = v

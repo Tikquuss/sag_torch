@@ -325,9 +325,7 @@ class Model(pl.LightningModule):
         Transformer model 
         """
         super().__init__()
-
-
-        
+    
         # Saving hyperparameters of autoencoder
         self.save_hyperparameters(params) 
 
@@ -515,7 +513,10 @@ class Model(pl.LightningModule):
         Used by pytorch_lightning
         """
         loss = torch.stack([x["loss"] for x in outputs]).mean()
-        logs = {"train_loss": loss}
+        logs = {
+            "train_loss": loss,
+            "train_epoch" : self.current_epoch,
+        }
 
         if 'train' in self.es_metric : logs["e_step"] = self.increase_es_limit(logs)
 
@@ -528,9 +529,7 @@ class Model(pl.LightningModule):
 
         self.memorization = self.memorization or memo_condition
         if memo_condition : self.memo_epoch = min(self.current_epoch, self.memo_epoch)
-        
-        logs["train_epoch"]  = self.current_epoch
-
+    
         schedulers = self.lr_schedulers()
         if schedulers is not None :
             try : scheduler = schedulers[0]
@@ -548,7 +547,7 @@ class Model(pl.LightningModule):
         loss = torch.stack([x["val_loss"] for x in outputs]).mean()
         logs = {
             "val_loss": loss,    
-            #"val_epoch": self.current_epoch,
+            "val_epoch": self.current_epoch,
         }
 
         if self.hparams.data_infos["task"] == "regression" : 

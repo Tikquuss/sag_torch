@@ -43,9 +43,11 @@ val_metric=val_loss
 early_stopping_grokking=$none
 #early_stopping_grokking="patience=int(1000),metric=str(${val_metric}),metric_threshold=float(90.0)"
 
-save_top_k=-1
+# save_top_k=-1
+# every_n_epochs=100
+
 save_top_k=2
-#every_n_epochs=100
+every_n_epochs=1
 
 # sgd
 momentum=0.9

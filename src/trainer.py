@@ -4,6 +4,7 @@ import os
 import re 
 import pytorch_lightning as pl
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint, EarlyStopping
+from pytorch_lightning.loggers import TensorBoardLogger, CSVLogger
 from loguru import logger
 
 from .modeling import Model
@@ -63,9 +64,14 @@ def train(params, data_module, root_dir = None):
         LearningRateMonitor("epoch")
     ]
 
+    trainer_config["logger"] = [
+        TensorBoardLogger(save_dir = root_dir, name='lightning_logs'),
+        CSVLogger(save_dir = root_dir, name="csv_logs")
+    ]
+
     trainer = pl.Trainer(**trainer_config)
     
-    trainer.logger._log_graph = True         # If True, we plot the computation graph in tensorboard
+    trainer.logger._log_graph = False        # If True, we plot the computation graph in tensorboard
     trainer.logger._default_hp_metric = None # Optional logging argument that we don't need
     
     # Check whether pretrained model exists. If yes, load it and skip training
