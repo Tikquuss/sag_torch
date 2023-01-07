@@ -8,8 +8,10 @@ pip install -r requirements.txt
 chmod +x train.sh 
 ./train.sh 
 
-#chmod +x train_loop.sh
-#./train_loop.sh 
+# or (to loop over hyperparameters)
+
+chmod +x train_loop.sh
+./train_loop.sh 
 ```
 
 See the notebook [Train.ipynb](Train.ipynb) 

@@ -36,8 +36,8 @@ wandb_project="${dataset_name}-wd=${weight_decay}-lr=${lr}-d=${dropout}"
 
 exp_id="${dataset_name}"
 
-#val_metric=val_acc
-val_metric=val_loss
+val_metric=val_acc
+#val_metric=val_loss
 
 ### Early_stopping (for grokking) : Stop the training `patience` epochs after the `metric` has reached the value `metric_threshold` ###
 early_stopping_grokking=$none
@@ -103,16 +103,13 @@ else
 	exit
 fi
 
+# mnist, fashion_mnist
 c_out="10,10"
+# wine, iris, digits, boston, diabete, linnerud
+# mnist, fashion_mnist
 hidden_dim="50"
-if [ $dataset_name == "mnist" ] || [ $dataset_name == "fashion_mnist" ]; then
-	c_out="10,10"
-	hidden_dim="50"
-elif [ $dataset_name == "cifar10" ]; then
-	c_out="64,128"
+if [ $dataset_name == "cifar10" ] || [ $dataset_name == "cifar100" ]; then
 	hidden_dim="250"
-elif [[ $dataset_name == "iris" ]]; then
-	hidden_dim="40,20"
 elif [[ "$dataset_name" == *"arithmetic"* ]]; then
 	hidden_dim="100,50,20"
 # else 

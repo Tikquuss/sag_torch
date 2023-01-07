@@ -27,10 +27,10 @@ def get_parser():
     parser.add_argument("--dropout", type=float, default=0.0, help="")
     parser.add_argument("--use_resnet", type=bool_flag, default=False, help="")
 
+    # Dataset
     def ds(dataset_name):
         if dataset_name in DATA_SET or "arithmetic" in dataset_name : return dataset_name
         raise argparse.ArgumentTypeError("Invalid value for dataset name!")
-    # Dataset
     parser.add_argument("--dataset_name", 
         #choices=DATA_SET,
         type=ds
