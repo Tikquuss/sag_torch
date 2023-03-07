@@ -15,10 +15,11 @@ DATA_PATH="../data"
 
 TORCH_SET = ["mnist", "fashion_mnist", "cifar10", "cifar100",]
 SKLEAN_SET = ["wine", "boston", "iris", "diabete", "digits", "linnerud"]
-OTHER_SET = ["arithmetic"]
+OTHER_SET = ["arithmetic", "multi_scale_feature"]
 DATA_SET = TORCH_SET + SKLEAN_SET + OTHER_SET
 
 from .utils import str2dic, bool_flag
+from .datasets.multi_scale_feature import get_dataloader as get_dataloader_msf
 
 class DatasetWithIndexes(Dataset):
     def __init__(self, dataset):
@@ -245,6 +246,17 @@ class LMLightningDataModule(pl.LightningDataModule):
                 classes = tuple(range(n_class))
                 task = "regression" if reg else "classification"
             c_in = 0
+        elif self.dataset_name == "multi_scale_feature" :
+            c_in, n_class = 100, 1
+            task = "regression"
+            classes = None
+            train_size, val_size = 150, 1000
+            k = [1, 50, 100000]
+            self.train_dataset, self.val_dataset = get_dataloader_msf(
+                train_size, val_size, 
+                d=c_in, k=k, noise = 0.0, seed = 100, 
+                task = task,
+            )
         else :
             # TODO : https://scikit-learn.org/stable/datasets/real_world.html
             raise Exception("Unknown dataset : %s" % self.dataset_name)
