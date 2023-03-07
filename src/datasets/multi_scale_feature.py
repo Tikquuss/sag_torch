@@ -113,8 +113,8 @@ def get_dataloader(train_size, val_size, d, k, noise = 0.0, seed = 100, task = "
     if task == "regression" : y, y_test = y.float(), y_test.float()
     else : y, y_test = y.long(), y_test.long()
 
-    train_set = TensorDataset(torch.from_numpy(X), y)
-    val_set = TensorDataset(torch.from_numpy(X_test), y_test)
+    train_set = TensorDataset(torch.from_numpy(X).float(), y)
+    val_set = TensorDataset(torch.from_numpy(X_test).float(), y_test)
 
     if include_indexes :
         train_set = DatasetWithIndexes(train_set)

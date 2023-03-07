@@ -19,10 +19,10 @@ from .hash import get_hash_path
 possible_metrics = ["%s_%s"%(i, j) for i, j in itertools.product(["train", "val"], ["acc", "loss"])]
 
 # MLP
-def make_mlp(l, act=nn.LeakyReLU(), tail=[]):
+def make_mlp(l, act=nn.LeakyReLU(), tail=[], bias=True):
     """makes an MLP with no top layer activation"""
     return nn.Sequential(*(sum(
-        [[nn.Linear(i, o)] + ([act] if n < len(l)-2 else [])
+        [[nn.Linear(i, o, bias=bias)] + ([act] if n < len(l)-2 else [])
          for n, (i, o) in enumerate(zip(l, l[1:]))], []) + tail))
 
 class MLP(nn.Module):
@@ -334,6 +334,7 @@ class Model(pl.LightningModule):
 
         # model and loss
         regression = self.hparams.data_infos["task"] == "regression"
+        self.hparams.hidden_dim = [h for h in self.hparams.hidden_dim if h!=0]
         if self.hparams.dataset_name in TORCH_SET :
             if not self.hparams.use_resnet :
                 self.backbone = CNNNet(
@@ -363,11 +364,19 @@ class Model(pl.LightningModule):
                     dilation=1,
                     dropout=self.hparams.dropout
                 )
-        elif self.hparams.dataset_name in SKLEAN_SET :
+        elif self.hparams.dataset_name in SKLEAN_SET:
             self.backbone = MLP(
-                l = [self.hparams.data_infos["c_in"]] +  self.hparams.hidden_dim + [self.hparams.data_infos["n_class"]],
+                l = [self.hparams.data_infos["c_in"]] + self.hparams.hidden_dim + [self.hparams.data_infos["n_class"]],
                 act=nn.LeakyReLU(), 
                 tail=[],
+                dropout = self.hparams.dropout
+            )
+        elif self.hparams.dataset_name == "multi_scale_feature":
+            self.backbone = MLP(
+                l = [self.hparams.data_infos["c_in"]] + self.hparams.hidden_dim + [self.hparams.data_infos["n_class"]],
+                act=nn.LeakyReLU(), 
+                tail=[],
+                bias=False,
                 dropout = self.hparams.dropout
             )
         elif "arithmetic" in self.hparams.dataset_name :
