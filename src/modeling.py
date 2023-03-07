@@ -26,9 +26,9 @@ def make_mlp(l, act=nn.LeakyReLU(), tail=[], bias=True):
          for n, (i, o) in enumerate(zip(l, l[1:]))], []) + tail))
 
 class MLP(nn.Module):
-    def __init__(self, l, act=nn.LeakyReLU(), tail=[], dropout=0.0):
+    def __init__(self, l, act=nn.LeakyReLU(), tail=[], bias = True, dropout=0.0):
         super(MLP, self).__init__()
-        self.net = make_mlp(l, act, tail = tail + [nn.Dropout(dropout)])
+        self.net = make_mlp(l, act, tail = tail + [nn.Dropout(dropout)], bias=bias)
     def forward(self, x):
         """
         x: (bs, _)
