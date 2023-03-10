@@ -29,7 +29,9 @@ def get_parser():
 
     # Dataset
     def ds(dataset_name):
-        if dataset_name in DATA_SET or "arithmetic" in dataset_name : return dataset_name
+        if dataset_name in DATA_SET \
+            or "arithmetic" in dataset_name \
+            or 'scm' in dataset_name : return dataset_name
         raise argparse.ArgumentTypeError("Invalid value for dataset name!")
     parser.add_argument("--dataset_name", 
         #choices=DATA_SET,

@@ -24,6 +24,9 @@ from .utils import str2dic, bool_flag
 from .datasets.multi_scale_feature import get_dataloader as get_dataloader_msf
 from .datasets.scm import get_dataloader as get_dataloader_scm
 
+def sigmoidal(x) : return torch.erf(x / np.sqrt(2))
+def id(x) : return x
+
 class DatasetWithIndexes(Dataset):
     def __init__(self, dataset):
         self.dataset = dataset
@@ -102,8 +105,12 @@ class LMLightningDataModule(pl.LightningDataModule):
         num_workers: int = 0,  
     ):
         super(LMLightningDataModule, self).__init__()
-        assert dataset_name in DATA_SET or "arithmetic" in dataset_name
-        if dataset_name in SKLEAN_SET or "arithmetic" in dataset_name : assert 0 < train_pct < 100
+        assert dataset_name in DATA_SET \
+            or "arithmetic" in dataset_name \
+            or 'scm' in dataset_name
+        if dataset_name in SKLEAN_SET \
+            or "arithmetic" in dataset_name :
+                assert 0 < train_pct < 100
         self.dataset_name = dataset_name
         self.train_batch_size = train_batch_size
         self.val_batch_size = val_batch_size
@@ -227,7 +234,7 @@ class LMLightningDataModule(pl.LightningDataModule):
             classes = None
         elif "arithmetic" in self.dataset_name :
             #"arithmetic,op=+,p=200,reg=False,mod=True,ijeqji=True"
-            s = self.dataset_name.split("arithmetic,")[1]
+            s = self.dataset_name.split("arithmetic,")[1].strip()
             s = str2dic(s)
             #assert 'p' in s.keys()
             op, p, reg, mod, ijeqji = s["op"], int(s["p"]), bool_flag(s["reg"]), bool_flag(s["reg"]), bool_flag(s["ijeqji"])
@@ -263,19 +270,22 @@ class LMLightningDataModule(pl.LightningDataModule):
             )
         elif "scm" in self.dataset_name:
             g_dic = {
-                "id" : lambda x : x,
+                "id" : id,
                 'relu' : F.relu,
                 'tanh' : F.tanh,
-                "sigmoid" : lambda x : torch.erf(x / np.sqrt(2)),
+                "sigmoid" : sigmoidal,
             }
             #"scm,N=784,M=4,scm=False,g=id,noise=0.0,out_dim=1"
-            s = self.dataset_name.split("scm,")[1]
+            s = self.dataset_name.split("scm,")[1].strip()
             s = str2dic(s)
             N, M, scm, g = int(s["N"]), int(s["M"]), bool_flag(s["scm"]), s["g"] 
             noise, out_dim = float(s.get("noise", 0.0)), int(s.get("out_dim", 1))
             g = g_dic[g]
             tmp = {"N" : N, "M" : M, "scm" : scm, "g" : g, "out_dim": out_dim}
-            
+            c_in, n_class = N, out_dim
+            task = "regression"
+            classes = None
+                    
             train_size, val_size = 150, 1000
             k = [1, 50, 100000]
             k = None
@@ -284,10 +294,6 @@ class LMLightningDataModule(pl.LightningDataModule):
                 N=N, M=M, out_dim=out_dim, g=g,
                 k=k, noise = noise, seed = 100, task = task,
             )
-
-            c_in, n_class = N, out_dim
-            task = "regression"
-            classes = None
         else :
             # TODO : https://scikit-learn.org/stable/datasets/real_world.html
             raise Exception("Unknown dataset : %s" % self.dataset_name)

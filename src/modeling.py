@@ -422,7 +422,7 @@ class Model(pl.LightningModule):
                 bias=False,
                 dropout = self.hparams.dropout
             )
-        elif self.hparams.dataset_name == "scm":
+        elif "scm" in self.hparams.dataset_name :
             #data_infos : {"N" : N, "M" : M, "scm" : scm, "g" : g, "out_dim": out_dim}
             self.backbone = SCM(
                 N = self.hparams.data_infos["N"], 
