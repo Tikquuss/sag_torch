@@ -1,7 +1,9 @@
 # torch
 import torch
+import numpy as np
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions.multivariate_normal import MultivariateNormal
 # PyTorch Lightning
 import pytorch_lightning as pl
 # wandb
@@ -35,6 +37,47 @@ class MLP(nn.Module):
         """
         return self.net(x) # (bs, _)
 
+def iid_normal(dim, sample_shape, mu, sigma) :
+    mean = torch.zeros(dim) + mu
+    cov = torch.eye(dim) * sigma
+    dist = MultivariateNormal(loc=mean, covariance_matrix=cov)
+    #dist = torch.distributions.normal.Normal(loc=mean, scale=torch.diagonal(cov))
+    return dist.sample(sample_shape = (sample_shape,))
+
+class SCM(nn.Module):
+    def __init__(self, N, K:list, scm:bool, out_dim = 1, g=nn.Identity(), bias = False, dropout=0.0):
+        super(SCM, self).__init__()
+        self.N = N
+        self.g = g
+        if len(K) > 1 :
+            self.w = make_mlp([N]+K, act=g, tail=[], bias=bias)
+            self.v = nn.Linear(K[-1], out_dim, bias=bias)
+        elif len(K) == 1 :
+            self.w = nn.Linear(N, K[0], bias=bias)
+            self.v = nn.Linear(K[0], out_dim, bias=bias)
+        else :
+            self.w = nn.Identity()
+            self.N = 1
+            self.g = nn.Identity()
+            self.v = nn.Linear(N, out_dim, bias=bias)
+        
+        if scm :
+          # initialize and freeze the feature map
+          if len(K) == 1 :
+            mu_w, sigma_w = 0.0, 1.0
+            self.w.weight.data = iid_normal(dim=N, sample_shape=K[0], mu=mu_w, sigma=sigma_w) # K x N
+          for param in self.w.parameters(): param.requires_grad = False
+
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x):
+        """
+        x: (bs, P)
+        """
+        hidden_units = self.g(self.w(x)  / np.sqrt(self.N)) # bs x K
+        y = self.v(hidden_units) # bs x out_dim 
+        return y.squeeze()
+    
 # Text
 def Embedding(num_embeddings, embedding_dim, padding_idx=None):
     m = nn.Embedding(num_embeddings, embedding_dim, padding_idx=padding_idx)
@@ -377,6 +420,17 @@ class Model(pl.LightningModule):
                 act=nn.LeakyReLU(), 
                 tail=[],
                 bias=False,
+                dropout = self.hparams.dropout
+            )
+        elif self.hparams.dataset_name == "scm":
+            #data_infos : {"N" : N, "M" : M, "scm" : scm, "g" : g, "out_dim": out_dim}
+            self.backbone = SCM(
+                N = self.hparams.data_infos["N"], 
+                K = self.hparams.hidden_dim, 
+                scm = self.hparams.data_infos.get("scm", False),
+                out_dim = self.hparams.data_infos["n_class"], 
+                g =  self.hparams.data_infos["g"],
+                bias = False, 
                 dropout = self.hparams.dropout
             )
         elif "arithmetic" in self.hparams.dataset_name :

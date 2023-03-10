@@ -1,15 +1,8 @@
-import numpy as np
-import matplotlib as mpl
-#mpl.use('tkagg')
-import matplotlib.pyplot as plt
-from matplotlib import gridspec
-from matplotlib import rc
-from scipy.stats import ortho_group
-from tqdm import tqdm
-
-from torch.utils.data import DataLoader, TensorDataset, Dataset, WeightedRandomSampler, RandomSampler
-import torchvision
+from torch.utils.data import DataLoader, TensorDataset, Dataset
 import torch
+
+import numpy as np
+from scipy.stats import ortho_group
 
 def d_div_m_uniform(d, m) :
     """

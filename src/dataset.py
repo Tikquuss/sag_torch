@@ -1,6 +1,8 @@
 import os
+import numpy as np
 from typing import List, Union, Dict
 import torch
+import torch.nn.functional as F
 from torch.utils.data import DataLoader, TensorDataset, Dataset, WeightedRandomSampler, RandomSampler
 import torchvision
 import pytorch_lightning as pl
@@ -15,11 +17,12 @@ DATA_PATH="../data"
 
 TORCH_SET = ["mnist", "fashion_mnist", "cifar10", "cifar100",]
 SKLEAN_SET = ["wine", "boston", "iris", "diabete", "digits", "linnerud"]
-OTHER_SET = ["arithmetic", "multi_scale_feature"]
+OTHER_SET = ["arithmetic", "multi_scale_feature", "scm"]
 DATA_SET = TORCH_SET + SKLEAN_SET + OTHER_SET
 
 from .utils import str2dic, bool_flag
 from .datasets.multi_scale_feature import get_dataloader as get_dataloader_msf
+from .datasets.scm import get_dataloader as get_dataloader_scm
 
 class DatasetWithIndexes(Dataset):
     def __init__(self, dataset):
@@ -258,6 +261,33 @@ class LMLightningDataModule(pl.LightningDataModule):
                 d=c_in, k=k, noise = 0.0, seed = 100, 
                 task = task,
             )
+        elif "scm" in self.dataset_name:
+            g_dic = {
+                "id" : lambda x : x,
+                'relu' : F.relu,
+                'tanh' : F.tanh,
+                "sigmoid" : lambda x : torch.erf(x / np.sqrt(2)),
+            }
+            #"scm,N=784,M=4,scm=False,g=id,noise=0.0,out_dim=1"
+            s = self.dataset_name.split("scm,")[1]
+            s = str2dic(s)
+            N, M, scm, g = int(s["N"]), int(s["M"]), bool_flag(s["scm"]), s["g"] 
+            noise, out_dim = float(s.get("noise", 0.0)), int(s.get("out_dim", 1))
+            g = g_dic[g]
+            tmp = {"N" : N, "M" : M, "scm" : scm, "g" : g, "out_dim": out_dim}
+            
+            train_size, val_size = 150, 1000
+            k = [1, 50, 100000]
+            k = None
+            self.train_dataset, self.val_dataset = get_dataloader_scm(
+                train_size, val_size, 
+                N=N, M=M, out_dim=out_dim, g=g,
+                k=k, noise = noise, seed = 100, task = task,
+            )
+
+            c_in, n_class = N, out_dim
+            task = "regression"
+            classes = None
         else :
             # TODO : https://scikit-learn.org/stable/datasets/real_world.html
             raise Exception("Unknown dataset : %s" % self.dataset_name)
