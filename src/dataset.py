@@ -291,8 +291,12 @@ class LMLightningDataModule(pl.LightningDataModule):
             k = None
             self.train_dataset, self.val_dataset = get_dataloader_scm(
                 train_size, val_size, 
-                N=N, M=M, out_dim=out_dim, g=g,
-                k=k, noise = noise, seed = 100, task = task,
+                N=N, M=M, out_dim=out_dim, g=g, 
+                mu_x = 0.0, sigma_x = 1.0, # data
+                mu_w = 0.0, sigma_w = 1.0, # feature map
+                mu_v = 0.0, sigma_v = 1.0, # output layer
+                mu_noise = 1.0, sigma_noise = noise, # noise
+                k=k, seed = 100, task = task,
             )
         else :
             # TODO : https://scikit-learn.org/stable/datasets/real_world.html
