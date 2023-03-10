@@ -275,13 +275,13 @@ class LMLightningDataModule(pl.LightningDataModule):
                 'tanh' : F.tanh,
                 "sigmoid" : sigmoidal,
             }
-            #"scm,N=784,M=4,scm=False,g=id,noise=0.0,out_dim=1"
+            #"scm,N=784,M=4,fixed_w=False,scm=False,g=id,noise=0.0,out_dim=1"
             s = self.dataset_name.split("scm,")[1].strip()
             s = str2dic(s)
-            N, M, scm, g = int(s["N"]), int(s["M"]), bool_flag(s["scm"]), s["g"] 
+            N, M, fixed_w, scm, g = int(s["N"]), int(s["M"]), bool_flag(s["fixed_w"]), bool_flag(s["scm"]), s["g"] 
             noise, out_dim = float(s.get("noise", 0.0)), int(s.get("out_dim", 1))
             g = g_dic[g]
-            tmp = {"N" : N, "M" : M, "scm" : scm, "g" : g, "out_dim": out_dim}
+            tmp = {"N" : N, "M" : M, "fixed_w" : fixed_w, "scm" : scm, "g" : g, "out_dim": out_dim}
             c_in, n_class = N, out_dim
             task = "regression"
             classes = None

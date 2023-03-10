@@ -45,7 +45,7 @@ def iid_normal(dim, sample_shape, mu, sigma) :
     return dist.sample(sample_shape = (sample_shape,))
 
 class SCM(nn.Module):
-    def __init__(self, N, K:list, scm:bool, out_dim = 1, g=nn.Identity(), bias = False, dropout=0.0):
+    def __init__(self, N:int, K:list, fixed_w:bool, scm=False, out_dim=1, g=nn.Identity(), bias = False, dropout=0.0):
         super(SCM, self).__init__()
         self.N = N
         self.g = g
@@ -61,12 +61,16 @@ class SCM(nn.Module):
             self.g = nn.Identity()
             self.v = nn.Linear(N, out_dim, bias=bias)
         
+        if fixed_w :
+            # initialize and freeze the feature map
+            if len(K) == 1 :
+                mu_w, sigma_w = 0.0, 1.0
+                self.w.weight.data = iid_normal(dim=N, sample_shape=K[0], mu=mu_w, sigma=sigma_w) # K x N
+            for param in self.w.parameters(): param.requires_grad = False
+        
         if scm :
-          # initialize and freeze the feature map
-          if len(K) == 1 :
-            mu_w, sigma_w = 0.0, 1.0
-            self.w.weight.data = iid_normal(dim=N, sample_shape=K[0], mu=mu_w, sigma=sigma_w) # K x N
-          for param in self.w.parameters(): param.requires_grad = False
+            self.w.weight.data = torch.ones_like(self.w.weight.data)
+            for param in self.v.parameters(): param.requires_grad = False
 
         self.dropout = nn.Dropout(dropout)
 
@@ -423,10 +427,11 @@ class Model(pl.LightningModule):
                 dropout = self.hparams.dropout
             )
         elif "scm" in self.hparams.dataset_name :
-            #data_infos : {"N" : N, "M" : M, "scm" : scm, "g" : g, "out_dim": out_dim}
+            #data_infos : {"N" : N, "M" : M, "fixed_w" : fixed_w, "scm" : scm, "g" : g, "out_dim": out_dim}
             self.backbone = SCM(
                 N = self.hparams.data_infos["N"], 
                 K = self.hparams.hidden_dim, 
+                fixed_w = self.hparams.data_infos["fixed_w"],
                 scm = self.hparams.data_infos.get("scm", False),
                 out_dim = self.hparams.data_infos["n_class"], 
                 g =  self.hparams.data_infos["g"],
