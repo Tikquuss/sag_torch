@@ -78,7 +78,7 @@ class SCM(nn.Module):
         """
         x: (bs, P)
         """
-        hidden_units = self.g(self.w(x)  / np.sqrt(self.N)) # bs x K
+        hidden_units = self.g(self.w(x) / np.sqrt(self.N)) # bs x K
         y = self.v(hidden_units) # bs x out_dim 
         return y.squeeze()
     
