@@ -10,8 +10,6 @@ from src.dataset import LMLightningDataModule, DATA_SET
 from src.utils import bool_flag, to_none, str2dic_all, str2list, intorstr, str2list_func
 from src.trainer import train
 
-
-
 def get_parser():
     """
     Generate a parameters parser.

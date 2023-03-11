@@ -51,6 +51,7 @@ class SCM(nn.Module):
         self.g = g
         if len(K) > 1 :
             self.w = make_mlp([N]+K, act=g, tail=[], bias=bias)
+            self.N = K[-1]
             self.v = nn.Linear(K[-1], out_dim, bias=bias)
         elif len(K) == 1 :
             self.w = nn.Linear(N, K[0], bias=bias)
@@ -65,11 +66,11 @@ class SCM(nn.Module):
             # initialize and freeze the feature map
             if len(K) == 1 :
                 mu_w, sigma_w = 0.0, 1.0
-                self.w.weight.data = iid_normal(dim=N, sample_shape=K[0], mu=mu_w, sigma=sigma_w) # K x N
+                self.w.weight.data = iid_normal(dim=N, sample_shape=(K[0],), mu=mu_w, sigma=sigma_w) # K x N
             for param in self.w.parameters(): param.requires_grad = False
         
         if scm :
-            self.w.weight.data = torch.ones_like(self.w.weight.data)
+            self.v.weight.data = torch.ones_like(self.v.weight.data)
             for param in self.v.parameters(): param.requires_grad = False
 
         self.dropout = nn.Dropout(dropout)

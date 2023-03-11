@@ -1,4 +1,5 @@
 import torch
+import torch.nn.functional as F
 from torch.distributions.multivariate_normal import MultivariateNormal
 from torch.utils.data import DataLoader, TensorDataset, Dataset
 import numpy as np
@@ -11,13 +12,50 @@ def iid_normal(dim, sample_shape, mu, sigma) :
     cov = torch.eye(dim) * sigma
     dist = MultivariateNormal(loc=mean, covariance_matrix=cov)
     #dist = torch.distributions.normal.Normal(loc=mean, scale=cov)
-    return dist.sample(sample_shape = (sample_shape,))
+    return dist.sample(sample_shape = sample_shape)
+
+def get_weights(N, M, out_dim = 1,
+            mu_w = 0.0, sigma_w = 1.0, # feature map
+            mu_v = 0.0, sigma_v = 1.0, # output layer
+            ):
+    """
+    N : input dimension 
+    P : number of sample
+    M : hidden dimension
+    out_dim : output dim
+    """
+    # weigths
+    w = iid_normal(dim=N, sample_shape=(M,), mu=mu_w, sigma=sigma_w) # M x N
+    v = iid_normal(dim=out_dim, sample_shape=(M,), mu=mu_v, sigma=sigma_v) # M x out_dim
+    return w, v
+
+def forward(w, v, x, N, g):
+    # hidden_units = w @ x.T / np.sqrt(N) # (?, N) x (N, P) = (?, P)
+    # if g is not None : activation = g(hidden_units) # (?, P)
+    # else : activation = hidden_units # (?, P)
+    # y = v.T @ activation # (out_dim, ?) x (?, P) = (out_dim, P)
+    # y = y.T.squeeze() # (P, out_dim) or (P,) if out_dim=1
+
+    hidden_units = x @ w.T / np.sqrt(N) # (P, N) x (N, ?) = (P, ?)
+    #hidden_units = torch.nn.functional.linear(x, w, bias=None) / np.sqrt(N) # (P, N) x (N, ?) = (P, ?)
+    if g is not None : activation = g(hidden_units) # (P, ?)
+    else : activation = hidden_units # (P, ?)
+    y = activation @ v # (P, ?) x (?, out_dim) = (P, out_dim)
+    #y = y.squeeze() # (P, out_dim) or (P,) if out_dim=1
+    return y, activation, hidden_units
+
+def backward(y_hat, y, activation):
+    grad_w = None
+    delta = y_hat - y # (P, out_dim)
+    grad_v = activation.unsqueeze(dim=2) @ delta.unsqueeze(dim=1) # (P, ?, 1) x (P, 1, out_dim) = (P, ?, out_dim)
+    grad_v = 2 * grad_v.mean(dim=0) # (?, out_dim)
+    return grad_w, grad_v
 
 def teacher(N, M, P, out_dim = 1, g = None,
             mu_x = 0.0, sigma_x = 1.0, # data
             mu_w = 0.0, sigma_w = 1.0, # feature map
             mu_v = 0.0, sigma_v = 1.0, # output layer
-            mu_noise = 1.0, sigma_noise = 1.0, # noise
+            mu_noise = 0.0, sigma_noise = 1.0, # noise
             ):
     """
     N : input dimension 
@@ -28,26 +66,25 @@ def teacher(N, M, P, out_dim = 1, g = None,
     g : activation function
     """
     # data
-    x = iid_normal(dim=N, sample_shape=P, mu=mu_x, sigma=sigma_x) # P x N
+    x = iid_normal(dim=N, sample_shape=(P,), mu=mu_x, sigma=sigma_x) # (P, N)
     # weigths
-    w = iid_normal(dim=N, sample_shape=M, mu=mu_w, sigma=sigma_w) # M x N
-    v = iid_normal(dim=out_dim, sample_shape=M, mu=mu_v, sigma=sigma_v) # M x out_dim
+    w, v = get_weights(N, M, out_dim, 
+                       mu_w = mu_w, sigma_w = sigma_w, # feature map
+                       mu_v = mu_v, sigma_v = sigma_v, # output layer
+                       )
+    w = iid_normal(dim=N, sample_shape=(M,), mu=mu_w, sigma=sigma_w) # (M, N)
+    v = iid_normal(dim=out_dim, sample_shape=(M,), mu=mu_v, sigma=sigma_v) # (M, out_dim)
     # noise
-    noise = iid_normal(dim=out_dim, sample_shape=P, mu=mu_noise, sigma=sigma_noise) # P x out_dim
-    noise = noise.squeeze() # P x out_dim or (P,) if out_dim=1
-
-    hidden_units = w @ x.T / np.sqrt(N) # M x P
-    if g is not None : hidden_units = g(hidden_units) # M x P
-    y = v.T @ hidden_units # out_dim x P
-    y = y.T.squeeze() # P x out_dim or (P,) if out_dim=1
-    
+    noise = iid_normal(dim=out_dim, sample_shape=(P,), mu=mu_noise, sigma=sigma_noise) # (P, out_dim)
+    #noise = noise.squeeze() # (P, out_dim)
+    y, _, _ = forward(w, v, x, N, g) # (P, out_dim) 
     return x, y, noise, w, v
 
 def get_data(seed, train_size, val_size, N, M, out_dim = 1, k = None, g = None,
             mu_x = 0.0, sigma_x = 1.0, # data
             mu_w = 0.0, sigma_w = 1.0, # feature map
             mu_v = 0.0, sigma_v = 1.0, # output layer
-            mu_noise = 1.0, sigma_noise = 1.0, # noise
+            mu_noise = 0.0, sigma_noise = 1.0, # noise
              ):
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -57,7 +94,7 @@ def get_data(seed, train_size, val_size, N, M, out_dim = 1, k = None, g = None,
                                     mu_x = mu_x, sigma_x = sigma_x, # data
                                     mu_w = mu_w, sigma_w = sigma_w, # feature map
                                     mu_v = mu_v, sigma_v = sigma_v, # output layer
-                                    mu_noise = mu_noise, sigma_noise = sigma_noise, # noise
+                                    mu_noise = mu_noise, sigma_noise = 1.0, # noise
                                     )
 
     if k is not None :
@@ -72,11 +109,22 @@ def get_data(seed, train_size, val_size, N, M, out_dim = 1, k = None, g = None,
     
     return x_train, y_train, x_test, y_test, w, v
 
+class DatasetWithIndexes(Dataset):
+    def __init__(self, dataset):
+        self.dataset = dataset
+        
+    def __getitem__(self, index):
+        data, target = self.dataset[index]
+        return data, target, index
+
+    def __len__(self):
+        return len(self.dataset)
+    
 def get_dataloader(train_size, val_size, N, M, k=None, out_dim = 1, g = None, 
     mu_x = 0.0, sigma_x = 1.0, # data
     mu_w = 0.0, sigma_w = 1.0, # feature map
     mu_v = 0.0, sigma_v = 1.0, # output layer
-    mu_noise = 1.0, sigma_noise = 1.0, # noise
+    mu_noise = 0.0, sigma_noise = 1.0, # noise
     seed = 100, task = "regression", include_indexes = False, train_batch_size = None, val_batch_size = None, num_workers=0, return_just_set = True):
     """
     # train_size, val_size : number of training/validation examples
@@ -84,7 +132,7 @@ def get_dataloader(train_size, val_size, N, M, k=None, out_dim = 1, g = None,
     # k: conditions numbers
     # noise: standard deviation of the noise added to the teacher output
     """
-    x_train, y_train, x_test, y_test = get_data(seed, train_size, val_size, N, M, out_dim, k=k, g=g,
+    x_train, y_train, x_test, y_test, w, v = get_data(seed, train_size, val_size, N, M, out_dim, k=k, g=g,
                                     mu_x = mu_x, sigma_x = sigma_x, # data
                                     mu_w = mu_w, sigma_w = sigma_w, # feature map
                                     mu_v = mu_v, sigma_v = sigma_v, # output layer
@@ -115,3 +163,13 @@ def get_dataloader(train_size, val_size, N, M, k=None, out_dim = 1, g = None,
     }
 
     return train_loader, val_loader, data_infos
+
+#######################################
+def sigmoidal(x) : return torch.erf(x / np.sqrt(2))
+def id(x) : return x
+g_dic = {
+    "id" : id,
+    'relu' : F.relu,
+    'tanh' : F.tanh,
+    "sigmoid" : sigmoidal,
+}
