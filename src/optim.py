@@ -10,6 +10,26 @@ from .optimizers.adam import CustomAdam, \
     SAGAdamSimpleWithd, SAGAdamWithd, \
     AdamCosineWithWarmup, AdamInverseSqrtWithWarmup
 
+def get_all_optims(weight_decay=0.0, momentum= 0.9, beta1=0.9, beta2=0.99):
+    all_optims = {
+    "sgd" : f"sgd,momentum=0,dampening=0,weight_decay={weight_decay},nesterov=False",
+    "momentum" : f"sgd,momentum={momentum},dampening=0.9,weight_decay={weight_decay},nesterov=False",
+    "nesterov" : f"sgd,momentum={momentum},dampening=0,weight_decay={weight_decay},nesterov=True",
+    "asgd" : f"asgd,lambd=0.0001,alpha=0.75,t0=1000000.0,weight_decay={weight_decay}",
+    "rmsprop" : f"rmsprop,alpha=0.99,weight_decay={weight_decay},momentum=0,centered=False",
+    "rmsprop_mom" : f"rmsprop,alpha=0.99,weight_decay={weight_decay},momentum={momentum},centered=False",
+    "rprop" : f"rprop,etaplus=0.5,etaminus=1.2,step_min=1e-06,step_max=50",
+    "adadelta" : f"adadelta,rho=0.9,weight_decay={weight_decay}", 
+    "adagrad" : f"adagrad,lr_decay=0,weight_decay={weight_decay},initial_accumulator_value=0", 
+    "adam" : f"adam,weight_decay={weight_decay},beta1={beta1},beta2={beta2},amsgrad=False",
+    "amsgrad" : f"adam,weight_decay={weight_decay},beta1={beta1},beta2={beta2},amsgrad=True",
+    "adamax" : f"adamax,weight_decay={weight_decay},beta1={beta1},beta2={beta2}",
+    "custom_adam" : f"custom_adam,weight_decay={weight_decay},beta1={beta1},beta2={beta2}",
+    "adam_inverse_sqrt" : f"adam_inverse_sqrt,weight_decay={weight_decay},beta1={beta1},beta2={beta2},warmup_updates=4000,warmup_init_lr=1e-7,exp_factor=0.5",
+    "adam_cosine" : f"adam_cosine,weight_decay={weight_decay},beta1={beta1},beta2={beta2},warmup_updates=4000,warmup_init_lr=1e-7,min_lr=1e-9,init_period=1000000,period_mult=1,lr_shrink=0.75"
+    }
+    return all_optims
+
 class NoamOpt:
     "Optim wrapper that implements rate."
 

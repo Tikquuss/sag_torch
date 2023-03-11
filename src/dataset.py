@@ -26,6 +26,12 @@ from .datasets.scm import get_dataloader as get_dataloader_scm
 
 def sigmoidal(x) : return torch.erf(x / np.sqrt(2))
 def id(x) : return x
+g_dic = {
+    "id" : id,
+    'relu' : F.relu,
+    'tanh' : F.tanh,
+    "sigmoid" : sigmoidal,
+}
 
 class DatasetWithIndexes(Dataset):
     def __init__(self, dataset):
@@ -262,7 +268,7 @@ class LMLightningDataModule(pl.LightningDataModule):
             classes = None
             
             train_size, val_size = 150, 1000
-            k = [1, 50, 100000]
+            k = [50, 100000]
             self.train_dataset, self.val_dataset = get_dataloader_msf(
                 train_size, val_size, 
                 d=c_in, k=k, noise = 0.0, seed = 100, 

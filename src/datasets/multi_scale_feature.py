@@ -34,6 +34,7 @@ def get_S(d, k):
     for i in range(m) :
         a, b = sum(p[:i]), sum(p[:i+1])
         S[a:b, a:b] *= 1/k[:i+1].prod()
+    #print(S.diagonal())
     return S
 
 def get_modulation_matrix_multi_singular(d, k):
