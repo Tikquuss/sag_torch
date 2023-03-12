@@ -16,35 +16,51 @@ def d_div_m_uniform(d, m) :
     for i in range(d) : p[i%m]+=1
     return p
     
-def get_S(d, k):
+def get_S(d, k, singular_val):
     """
     Rectangular diagonal matrix of the modulation matrix.
     In this implementation we choose a Diagonal matrix.
 
-    The 1st p elements of the diagonal matrix are equal to 1/k_1 = 1
-    ... 2nd .............................................. 1/(k_1*k_2)
-    ... 3nd ............................................... 1/(k_1*k_2*k_3)
+    The 1st p elements of the diagonal matrix are equal to singular_val/k_1 = singular_val
+    ... 2nd .............................................. singular_val/(k_1*k_2)
+    ... 3nd ............................................... singular_val/(k_1*k_2*k_3)
     """
-    try : k.insert(0, 1)
-    except AttributeError : k = [1, k] # if was int, not array
-    k = np.array(k)
-    m = len(k) 
-    p = d_div_m_uniform(d, m)
+    if type(k) == dict :
+        percentage = list(k.values())
+        sum_p = sum(percentage)
+        assert sum_p <= 1.0
+        k = list(k.keys())
+        k.insert(0, 1)
+        percentage.insert(0, 1 - sum_p)
+        k = np.array(k)
+        m = len(k) 
+        assert d >= m
+        p = np.zeros((m,), dtype=int)
+        for i in range(m-1) : p[i] = round(percentage[i] * d, 0)
+        p[m-1] = d - sum(p)
+    else :
+        try : k.insert(0, 1)
+        except AttributeError : k = [1, k] # if was int, not array
+        k = np.array(k)
+        m = len(k) 
+        p = d_div_m_uniform(d, m)
+        
     S = np.eye(d)
     for i in range(m) :
         a, b = sum(p[:i]), sum(p[:i+1])
         S[a:b, a:b] *= 1/k[:i+1].prod()
+    S = S*singular_val
     #print(S.diagonal())
     return S
 
-def get_modulation_matrix_multi_singular(d, k):
+def get_modulation_matrix_multi_singular(d, k, singular_val=1.0):
     """
     d : int (size of the modulation matrix dxd)
     k : list of conditions numbers ([k_1, ..., k_m])
     """
     U = ortho_group.rvs(d)
     VT = ortho_group.rvs(d)
-    S = get_S(d, k)
+    S = get_S(d, k, singular_val)
     F = np.dot(U, np.dot(S, VT))
     # F = S
     return F, U, VT, S
