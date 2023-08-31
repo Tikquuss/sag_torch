@@ -88,8 +88,8 @@ def teacher(N, M, P, out_dim = 1, g = None,
                        mu_w = mu_w, sigma_w = sigma_w, # feature map
                        mu_v = mu_v, sigma_v = sigma_v, # output layer
                        )
-    #if scm : v = torch.ones_like(v)
-    v = torch.ones_like(v)*sigma_v
+    if scm : v = torch.ones_like(v)*sigma_v
+    #v = torch.ones_like(v)*sigma_v
     # noise
     noise = iid_normal(dim=out_dim, sample_shape=(P,), mu=mu_noise, sigma=sigma_noise) # (P, out_dim)
     #noise = noise.squeeze() # (P, out_dim)

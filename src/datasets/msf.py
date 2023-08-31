@@ -157,4 +157,4 @@ def get_dataloader(train_size, val_size, N,
         }
     }
 
-    return train_loader, val_loader, data_infos, w, F_matrix
+    return train_loader, val_loader, data_infos, w, F_matrix, x_train, y_train, x_test, y_test

@@ -7,9 +7,10 @@ import tqdm
 import os
 
 from src.optim import get_optimizer
-from src.datasets.msf import get_dataloader, get_weights, forward, iid_normal
+from src.datasets.msf import get_dataloader, get_weights, forward, iid_normal, get_data
 from src.dataset import g_dic
 from src.optim import get_all_optims
+
 
 if __name__ == "__main__":
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -19,21 +20,21 @@ if __name__ == "__main__":
     np.random.seed(seed)
     torch.manual_seed(seed)
 
-    s={"N":500, "out_dim":1, "g":"id", "noise":0.0001}
-    train_size, val_size = 500, 1000
+    N=500
+    alpha = .5
+    s={"N":N, "out_dim":1, "g":"sigmoid", "noise":0.001}
+    train_size, val_size = int(alpha*N), 1000
 
     k = [10, 50]
-    k = {500 : 0.5}
-    k = {5 : 0.2, 10 : 0.2, 50:0.2, 100:0.2, 1000:0.2}
+    #k = {1.5 : 0.5}
+    #k = {5 : 0.2, 10 : 0.2, 50:0.2, 100:0.2} # 1000:0.2}
     #k = None
     singular_val=1.0
 
-    max_epoch = 1000*20#00
+    max_epoch = 10000*50#00
     noise_optim, inv_tmp = 0.0, 2/100000#00
-    lr = 0.001
-    optim_name="custom_adam"
-    optim_name="sgd"
-    all_optims = get_all_optims(weight_decay=0.0, momentum=0.9, beta1=0.9, beta2=0.99)
+    lr = 0.1
+    weight_decay=0.0
 
     task = "regression"
     #task = "classification"
@@ -43,14 +44,21 @@ if __name__ == "__main__":
     N, g = s["N"], s["g"]
     noise, out_dim = s.get("noise", 0.0), s.get("out_dim", 1)
     act_funct = g_dic[g]
-    if g in ["relu", 'id'] : sigma_w = N**-0.5
+    
+    #if g in ["relu", 'id'] : sigma_w = N**-0.5
+    sigma_w = 1
+    
     denom = 1.0
-    #denom = np.sqrt(N)
-    train_loader, val_loader, data_infos, w_start, F_matrix, x_train, y_train, x_test, y_test = get_dataloader(
+    sigma_x = 1/np.sqrt(N)
+    
+    # denom = np.sqrt(N)
+    # sigma_x = 1/np.sqrt(N)
+    
+    _, _, data_infos, w_start, F_matrix, x_train, y_train, x_test, y_test = get_dataloader(
         train_size, val_size, N,
         k=k, singular_val=singular_val,
         out_dim = out_dim, g=act_funct,
-        mu_x = 0.0, sigma_x = 1.0, # data
+        mu_x = 0.0, sigma_x = sigma_x, # data
         mu_w = mu_w, sigma_w = sigma_w, # w
         mu_noise = 0.0, sigma_noise = noise, # noise
         seed = seed, task = task,
@@ -61,18 +69,19 @@ if __name__ == "__main__":
     )
     F_matrix = F_matrix.to(device)
     w_start = w_start.to(device)
+    x_train = x_train.to(device)
+    y_train = y_train.to(device)
+    x_test = x_test.to(device)
+    y_test = y_test.to(device)
+
     for key, val in data_infos.items()  : print(str(key) + " --> " + str(val))
 
     w = get_weights(N, out_dim = out_dim, mu_w = mu_w, sigma_w = sigma_w)
-    w.requires_grad_(True)
+    #w.requires_grad_(True)
     w=w.to(device)
-    w=torch.nn.Parameter(w)
+    #w=torch.nn.Parameter(w)
 
-    params = [{'params':[w], 'lr':lr}]
-    optimizer = get_optimizer(params,  all_optims[optim_name] + f",lr={lr}")
-
-    if task == "regression" :
-        criterion = nn.MSELoss()
+    if task == "regression" : criterion = nn.MSELoss()
     else :
         #criterion = nn.CrossEntropyLoss()
         criterion = nn.BCEWithLogitsLoss()
@@ -81,41 +90,53 @@ if __name__ == "__main__":
     train_accuracies, val_accuracies = [], []
     Rs, Qs, Ts, e_g = [], [], [], []
     T = (1/N)*(w_start.T @ F_matrix.T @ F_matrix @ w_start.data) # (out_dim, N) x (N, N) x (N, N) x (N, out_dim)
+
+    XF = x_train @ F_matrix # P x N
+    const = (1/train_size)
+    A = const * (XF.T @ XF) + weight_decay # NxN
+    B = const * (XF.T @ x_train) @ w_start # Nx1
+    
+    H = torch.eye(N).to(device) - lr * A
+    #e_values, e_vect = torch.linalg.eig(H)
+    e_values, e_vect = torch.linalg.eigh(H) # for Hermitian and symmetric matrices.
+    #print(e_values)
+
+    def f_map(w) : return w - lr * (A @ w - B)
+    def grad_f_map(w) : return H
+
+    try :
+        w_gd = torch.linalg.inv(A) @ B
+        #print(w_gd)
+        #print(w)
+        with torch.no_grad():
+            y_hat, _ = forward(w_gd, x_train, N, g=act_funct, denom=denom)
+            loss = F.mse_loss(input=y_hat, target=y_train, size_average=None, reduce=None, reduction='mean')
+            print(loss)
+            y_hat, _ = forward(w_gd, x_test, N, g=act_funct, denom=denom)
+            loss = F.mse_loss(input=y_hat, target=y_test, size_average=None, reduce=None, reduction='mean')
+            print(loss)
+    except :
+        print("================= B^-1 impossible")
+    
+    train_losses, val_losses = [], []
+    train_accuracies, val_accuracies = [], []
+    Rs, Qs, Ts, e_g = [], [], [], []
+    T = (1/N)*(w_start.T @ F_matrix.T @ F_matrix @ w_start.data) # (out_dim, N) x (N, N) x (N, N) x (N, out_dim)
     try :
         for ep in (pbar := tqdm.tqdm(range(max_epoch))):
-            train_loss, val_loss = [], []
-            train_acc, val_acc = [], []
-            for x, y in train_loader :
-                x, y = x.to(device), y.to(device)
-                y_hat, _ = forward(w, x, N, g=act_funct, denom=denom)
-                loss = F.mse_loss(input=y_hat, target=y, size_average=None, reduce=None, reduction='mean')
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                epsilon = noise_optim*iid_normal(dim=out_dim, sample_shape=(N,), mu=0.0, sigma=inv_tmp)
-                w.data = w.data + epsilon.to(device)
-                train_loss.append(loss.item())
-                if "classification" in task :
-                    acc = (F.sigmoid(y_hat).round() == y).float().mean().item()
-                    train_acc.append(acc)
-
             with torch.no_grad():
-                for x, y in val_loader :
-                    x, y = x.to(device), y.to(device)
-                    y_hat, _ = forward(w, x, N, g=act_funct, denom=denom)
-                    loss = F.mse_loss(input=y_hat, target=y, size_average=None, reduce=None, reduction='mean')
-                    val_loss.append(loss.item())
-                    if "classification" in task :
-                        acc = (F.sigmoid(y_hat).round() == y).float().mean().item()
-                        val_acc.append(acc)
+                y_hat, _ = forward(w, x_train, N, g=act_funct, denom=denom)
+                loss = F.mse_loss(input=y_hat, target=y_train, size_average=None, reduce=None, reduction='mean')
+                
+                epsilon = noise_optim*iid_normal(dim=out_dim, sample_shape=(N,), mu=0.0, sigma=inv_tmp)
+                w = f_map(w) + epsilon.to(device)
+                train_losses.append(loss.item())
 
-            train_losses.append(sum(train_loss)/len(train_loss))
-            val_losses.append(sum(val_loss)/len(val_loss))
+                y_hat, _ = forward(w, x_test, N, g=act_funct, denom=denom)
+                loss = F.mse_loss(input=y_hat, target=y_test, size_average=None, reduce=None, reduction='mean')
+                val_losses.append(loss.item())
+            
             pbar_infos = f"train_loss : {round(train_losses[-1],5)}, val_loss : {round(val_losses[-1],5)}"
-            if "classification" in task :
-                train_accuracies.append(sum(train_acc)/len(train_acc))
-                val_accuracies.append(sum(val_acc)/len(val_acc))
-                pbar_infos += f", train_acc : {round(train_accuracies[-1],5)}, val_acc : {round(val_accuracies[-1],5)}"
             pbar.set_description(pbar_infos)
 
             R = (1/N)*(w_start.T @ F_matrix @ w.data) # (out_dim, N) x (N, N) x (N, out_dim)
@@ -125,10 +146,12 @@ if __name__ == "__main__":
             Ts.append(T.item())
             e_g.append((1/2)*(1+Q.item()-2*R.item()))
 
-            if val_losses[-1] < 0.001 : break
-            
+            if val_losses[-1] < 0.0001 : break
+                                        
     except KeyboardInterrupt:
         pass
+
+    #print(w)
 
     L, C = (2 if "classification" in task else 1)+1, 2
     #figsize=(C*15, L*10)
@@ -165,8 +188,8 @@ if __name__ == "__main__":
     ax.set_xlabel('epoch (log scale)')
 
     # sauvegarder l'image
-    save_path=f"D:/Canada/MILA/2023_path_to_PhD/double descent/images_msf"
-    file_name = f'{N}_{g}_{train_size}_{val_size}_{task}_{optim_name}_{max_epoch}'
+    save_path=f"D:/Canada/MILA/2023_path_to_PhD/double descent/images_msf2"
+    file_name = f'{N}_{g}_{train_size}_{val_size}_{task}_{max_epoch}'
     os.makedirs(save_path, exist_ok=True)
     plt.savefig(os.path.join(save_path, f'{file_name}.png'), bbox_inches='tight')
     #plt.savefig(os.path.join(save_path, f'{file_name}.pdf'), bbox_inches='tight', format = "pdf")

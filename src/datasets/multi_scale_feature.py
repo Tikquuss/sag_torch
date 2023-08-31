@@ -59,10 +59,11 @@ def get_modulation_matrix_multi_singular(d, k, singular_val=1.0):
     k : list of conditions numbers ([k_1, ..., k_m])
     """
     U = ortho_group.rvs(d)
-    VT = ortho_group.rvs(d)
+    #VT = ortho_group.rvs(d)
+    VT = U.T
     S = get_S(d, k, singular_val)
     F = np.dot(U, np.dot(S, VT))
-    # F = S
+    F = S
     return F, U, VT, S
 
 def get_modulation_matrix(d, p, k):

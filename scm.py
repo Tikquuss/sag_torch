@@ -103,13 +103,12 @@ def one_epoch_infinite_data(w, v, w_start, v_start, criterion, optimizer, h_para
 
     return train_loss, val_loss, train_acc, val_acc
 
-
-def plot_and_fill_between(ax, dict_v, min_ep, max_ep, label) :
+def plot_and_fill_between(ax, type_of, dict_v, min_ep, max_ep, label) :
     x_, y_  = list(dict_v[0].keys()), list(dict_v[0].values())
     x_ = x_[min_ep:max_ep]
     y_ = y_[min_ep:max_ep]
     #x_ = [i/N for i in x_]
-    ax.plot(x_, y_, label=label)
+    ax.plot(x_, y_, type_of, label=label)
     if dict_v[1] :
         std = list(dict_v[1].values())[min_ep:max_ep]
         y_min = [y_[i] - std[i] for i in range(len(y_))]
@@ -120,11 +119,14 @@ def do_plot(h_params,
             train_losses, val_losses, train_accuracies, val_accuracies, 
             Qs = None, Rs = None, Ts = None,
             tl_std = None, vl_std = None, ta_std = None, va_std = None,
-            Qs_std = None, Rs_std = None, Ts_std = None
+            Qs_std = None, Rs_std = None, Ts_std = None,
+            type_of='-',
+            x_label = "epoch",
+            log_scale = True
             ):
 
     min_ep, max_ep = 0, h_params.max_epoch*2
-    L, C = (2 if "classification" in h_params.task else 1), 2
+    L, C = (2 if "classification" in h_params.task else 1), (2 if log_scale else 1)
     if Qs : L += 1
     #figsize=(C*15, L*10)
     figsize=(C*6, L*4)
@@ -136,30 +138,33 @@ def do_plot(h_params,
         ['loss', "accuracy"],
         [0.0, 1.0]
     ):
-        for j in [1, 2] :
+        cand = [1, 2] if log_scale else [1]
+        for j in cand :
             ax = fig.add_subplot(L, C, i+j)
-            plot_and_fill_between(ax, train_m, min_ep, max_ep, label="train")
-            if val_m : plot_and_fill_between(ax, val_m, min_ep, max_ep, label="val")
+            plot_and_fill_between(ax, type_of, train_m, min_ep, max_ep, label="train")
+            if val_m : plot_and_fill_between(ax, type_of, val_m, min_ep, max_ep, label="val")
             ax.axhline(y = threshold, color = "red", linestyle = '--')
-            ax.set_xlabel('epoch')
+            ax.set_xlabel(x_label)
             ax.set_ylabel(label)
             ax.legend()
-        ax.set_xscale("log")
-        ax.set_xlabel('epoch (log scale)')
-        #ax.set_yscale("log")
+        if log_scale :
+            ax.set_xscale("log")
+            ax.set_xlabel(f'{x_label} (log scale)')
+            #ax.set_yscale("log")
 
     if Qs :
+        cand = [i+j+1, i+j+2] if log_scale else [i+j]
         for k in [i+j+1, i+j+2] :
             ax = fig.add_subplot(L, C, k)
-            plot_and_fill_between(ax, (Rs, Rs_std), min_ep, max_ep, label="Rs")
-            plot_and_fill_between(ax, (Qs, Qs_std), min_ep, max_ep, label="Qs")
-            plot_and_fill_between(ax, (Ts, Ts_std), min_ep, max_ep, label="Ts")
+            plot_and_fill_between(ax, type_of, (Rs, Rs_std), min_ep, max_ep, label="Rs")
+            plot_and_fill_between(ax, type_of, (Qs, Qs_std), min_ep, max_ep, label="Qs")
+            plot_and_fill_between(ax, type_of, (Ts, Ts_std), min_ep, max_ep, label="Ts")
             #ax.plot(e_g, label="e_g")
-            ax.set_xlabel('epoch')
+            ax.set_xlabel(x_label)
             ax.set_ylabel("alignment")
             ax.legend()
     ax.set_xscale("log")
-    ax.set_xlabel('epoch (log scale)')
+    ax.set_xlabel(f'{x_label} (log scale)')
 
     # save the image  
     if h_params.file_name :
@@ -296,10 +301,13 @@ def mu_and_std_for_dict(p_dict, min_ep):
 
 def train_mutiple_seeds(h_params, plot = True) :
     seeds = h_params.seed
-    if (seeds is None) or type(seeds) == int or len(seeds) == 1 :
-        return train(h_params, plot)
+    one_seed = (seeds is None) or type(seeds) == int or len(seeds) == 1 
+    if one_seed :
+        train_losses, val_losses, train_accuracies, val_accuracies, Rs, Qs, Ts = train(h_params, plot)
+        tl_std, vl_std, ta_std, va_std, Qs_std, Rs_std, Ts_std = None, None, None, None, None, None, None
+        return train_losses, val_losses, train_accuracies, val_accuracies, Rs, Qs, Ts, \
+                tl_std, vl_std, ta_std, va_std, Qs_std, Rs_std, Ts_std
         
-
     train_losses, val_losses = [], []
     train_accuracies, val_accuracies = [], []
     Rs, Qs, Ts = [0 for _ in seeds], [0 for _ in seeds], [0 for _ in seeds]
@@ -313,6 +321,7 @@ def train_mutiple_seeds(h_params, plot = True) :
         train_accuracies.append(ta)
         val_accuracies.append(va)
         min_ep = min(min_ep, len(tl))
+    h_params.seed = seeds
 
     train_losses, tl_std = mu_and_std_for_dict(train_losses, min_ep)
     val_losses,   vl_std = mu_and_std_for_dict(val_losses, min_ep)
@@ -329,34 +338,91 @@ def train_mutiple_seeds(h_params, plot = True) :
     if h_params.file_name is None : 
         h_params.file_name = f'{h_params.N}_{h_params.g}_{h_params.K}_{h_params.train_size}_{h_params.val_size}_{h_params.task}_{h_params.optim_name}_{h_params.max_epoch}'
     
-    do_plot(h_params, train_losses, val_losses, train_accuracies, val_accuracies, 
-            Qs, Rs, Ts,
-            tl_std, vl_std, ta_std, va_std, Qs_std, Rs_std, Ts_std)
+    if plot :
+        do_plot(h_params, train_losses, val_losses, train_accuracies, val_accuracies, 
+                Qs, Rs, Ts,
+                tl_std, vl_std, ta_std, va_std, Qs_std, Rs_std, Ts_std)
     
     return train_losses, val_losses, train_accuracies, val_accuracies, Qs, Rs, Ts, \
             tl_std, vl_std, ta_std, va_std, Qs_std, Rs_std, Ts_std
 
 
-def sweep(h_params, list_v):
-    pass
-    
+def min_of_dict(dict) :
+    k = min(dict, key=dict.get)
+    v = dict.get(k)
+    return k, v
+
+def max_of_dict(dict) :
+    k = max(dict, key=dict.get)
+    v = dict.get(k)
+    return k, v
+
+def sweep(h_params, params_key, params_values : list):
+
+    n_values = len(params_values)
+    seeds = h_params.seed
+    one_seed = (seeds is None) or type(seeds) == int or len(seeds) == 1 
+
+    train_losses, val_losses = {}, {}
+    tl_std, vl_std = {}, {}
+    train_accuracies, val_accuracies = {}, {}
+    ta_std, va_std = {}, {}
+    Rs, Qs, Ts = {}, {}, {}
+    Qs_std, Rs_std, Ts_std = {}, {}, {}
+
+    for i, value in enumerate(params_values) :
+        setattr(h_params, params_key, value)
+        setattr(h_params, "train_size", h_params.K*h_params.N)
+        #l, vl, ta, va, r, q, t, tlstd, vlstd, tastd, vastd, Qsstd, Rsstd, Tsstd = train(h_params, plot=False)
+        tl, vl, ta, va, r, q, t, tlstd, vlstd, tastd, vastd, Qsstd, Rsstd, Tsstd = train_mutiple_seeds(h_params, plot = False)
+
+        key_tl, train_losses[value] = min_of_dict(tl) 
+        key_vl, val_losses[value] = min_of_dict(vl) 
+        if not one_seed : tl_std[value], vl_std[value] = tlstd[key_tl], vlstd[key_vl] 
+
+        if "classification" in h_params.task :
+            key_ta, train_accuracies[value] = max_of_dict(ta) 
+            key_va, val_accuracies[value] = max_of_dict(va) 
+            if not one_seed : ta_std[value], va_std[value] = tastd[key_ta], vastd[key_va]
+
+    if one_seed :
+        tl_std, vl_std, ta_std, va_std, Qs_std, Rs_std, Ts_std = None, None, None, None, None, None, None
+
+    print("==============")
+
+    if h_params.file_name is None : 
+        h_params.file_name = f'{params_key}'
+
+    do_plot(h_params, train_losses, val_losses, train_accuracies, val_accuracies, 
+            Qs, Rs, Ts,
+            tl_std, vl_std, ta_std, va_std, 
+            #Qs_std, Rs_std, Ts_std,
+            type_of='-+',
+            x_label = params_key
+            )
+
 if __name__ == "__main__":
     
-    seed=list(range(1))
-    seed=None
+    seed=list(range(2))
+    seed = 1
+    #seed=None
 
-    train_size, val_size = 10, 1000
+    N=50
+    alpha = 1.
+    train_size, val_size = int(alpha*N), 1000
     #max_epoch = 1000*100
-    max_epoch = 5000
+    max_epoch = 1000*10#
 
-    k = [10, 1]
-    k = {10 : 0.2}
-    k = None
+    k = [10]
+    k = {100 : 0.5}
+    #k = None
     
+    sigma_z = 0.0001
+
     h_params = {
         ###### Model ######
-        "N":10, "M":1, "K":1, "out_dim":1,
-        "fixed_w":False, "scm":True, "g":"sigmoid", 
+        "N":N, "M":1, "K":1, "out_dim":1,
+        "fixed_w":False, "scm":True, "g":"id", 
         
         # feature map
         "mu_w" : 0.0, "sigma_w" : 1.0, 
@@ -364,11 +430,11 @@ if __name__ == "__main__":
         "mu_v": 0.0, "sigma_v" : 1.0, 
 
         ###### Data ###### 
-        "noise":0.001, 
+        "noise": sigma_z, 
         "train_size" : train_size, "val_size" : val_size,
         "train_batch_size" : 2**20, "val_batch_size" : 2**20,
-        #"mu_x" : 0.0, "sigma_x" : 1.0, "weights_x" : None,
-        "mu_x" : [-1.0, 0.0, 1.0], "sigma_x" : [4.0, 1.0, 4.0], "weights_x" : [0.3, 0.4, 0.3],
+        "mu_x" : 0.0, "sigma_x" : 1.0, "weights_x" : None,
+        #"mu_x" : [-1.0, 0.0, 1.0], "sigma_x" : [4.0, 1.0, 4.0], "weights_x" : [0.3, 0.4, 0.3],
         "k" : k, "singular_val" : 1.0,
 
         ###### Training ###### 
@@ -377,12 +443,12 @@ if __name__ == "__main__":
         #"task" : "classification",
         "max_epoch" : max_epoch,
         "device" : 'cuda',
-        'loss_tolerance' : 0.0001,
+        'loss_tolerance' : 0.00001,
 
         ###### Optimizer ######
-        # "optim_name":"custom_adam",
+        #"optim_name":"custom_adam",
         "optim_name":"sgd",
-        "lr" : 0.2,
+        "lr" : 0.1,
         "weight_decay": 0.0, 
         "momentum":0.9, 
         "beta1":0.9, 
@@ -399,3 +465,7 @@ if __name__ == "__main__":
     h_params = AttrDict(h_params)
     #train(h_params, plot = True)
     train_mutiple_seeds(h_params, plot = True)
+
+    params_key = "K"
+    params_values = list(range(1, 3000+1, 500))
+    #sweep(h_params, params_key, params_values)
